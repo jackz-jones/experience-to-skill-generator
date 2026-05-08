@@ -1,0 +1,47 @@
+# Local planning and IDE state
+.codebuddy/
+
+# Python cache and build output
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Generated skills and local sessions
+generated_skills/
+generated-skills/
+skill_library/
+sessions/
+*.tmp
+*.bak
+*.md.bak
+
+# Local config and secrets
+.env
+.env.*
+*.local
+.experience-to-skill-generator/
+
+# OS and editor files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
