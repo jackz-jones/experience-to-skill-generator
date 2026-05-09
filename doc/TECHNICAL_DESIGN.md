@@ -2,7 +2,7 @@
 
 > [中文](TECHNICAL_DESIGN_CN.md)
 
-### Architecture goals
+### 1. Architecture goals
 
 `Experience-to-Skill Generator` upgrades a focused OpenClaw session analyzer into a universal agent SKILL generator. The core principles are:
 
@@ -12,25 +12,7 @@
 - **Script-friendly**: core commands provide JSON output and non-zero exit codes for errors.
 - **Extensible**: adapters and templates support new agents and output styles.
 
-### Core modules
-
-Most implementation lives in `python-scripts/universal_skill_generator.py`, with supporting modules:
-
-| Module | File | Responsibility |
-| --- | --- | --- |
-| Config loading | `universal_skill_generator.py` | Merge defaults, JSON config, environment variables, and CLI overrides |
-| Config validation | `universal_skill_generator.py` | Validate agent, session sources, output, analysis, security, templates, and adapters |
-| Agent adapters | `universal_skill_generator.py` | Detect `openclaw` or fall back to `generic`; allow custom adapters |
-| Session loading | `universal_skill_generator.py` | Read files or directories in `json`, `jsonl`, `md`, or `txt` format |
-| Preprocessing | `universal_skill_generator.py` | Validate empty data, normalize roles, chunk long sessions, truncate max chars |
-| Redaction | `universal_skill_generator.py` | Clean tokens, secrets, emails, private paths, logs, and generated results |
-| Analysis | `analyze_conversation.py` | Extract tasks, steps, constraints, keywords, confidence, and review flags |
-| SKILL rendering | `generate_skill.py` | Generate structured `SKILL.md` and metadata from analysis results |
-| Vector engine | `vector_skill_optimizer.py` | Skill vectorization, similarity search, and gap analysis (numpy optional, pure-Python fallback) |
-| Writing | `universal_skill_generator.py` | Atomic writes, similar skill detection, and conflict strategy handling |
-| CLI | `universal_skill_generator.py` | `diagnose`, `analyze`, `generate`, `config`, `validate-config` |
-
-### Data flow
+### 2. Data flow
 
 ```mermaid
 flowchart TD
@@ -47,27 +29,16 @@ flowchart TD
     K --> L[Atomic Write SKILL.md]
 ```
 
-### Configuration merge order
+### 3. Agent adapter strategy
 
-Configuration precedence (low to high):
+Built-in adapters (must match `KNOWN_AGENT_ADAPTERS` in [universal_skill_generator.py](../python-scripts/universal_skill_generator.py)):
 
-1. `DEFAULT_CONFIG`
-2. JSON file specified by `--config`
-3. Environment variable overrides, e.g. `ESG_OUTPUT_DIR`, `ESG_SESSION_DIR`
-4. CLI flag overrides, e.g. `--input`, `--output-dir`, `--conflict`
+| Adapter | `markers` | `skill_dir` | `config_dir` | `session_dir` | `metadata_format` |
+| --- | --- | --- | --- | --- | --- |
+| `openclaw` | `[".openclaw"]` | `~/.openclaw/skills` | `~/.openclaw/config/skills/experience-to-skill-generator` | `~/.openclaw/agents` | `openclaw` |
+| `generic` | `[]` | `./generated_skills` | `./.experience-to-skill-generator` | `./sessions` | `generic` |
 
-This design ensures sensible defaults while allowing installers and automation pipelines to override as needed.
-
-### Agent adapter strategy
-
-Built-in adapters:
-
-| Adapter | session_dir | skill_dir | metadata_format |
-| --- | --- | --- | --- |
-| `openclaw` | `~/.openclaw/agents` | `~/.openclaw/skills` | `openclaw` |
-| `generic` | `./sessions` | `./generated_skills` | `generic` |
-
-`--agent auto` detects OpenClaw markers or the `openclaw` command first; otherwise it falls back to `generic`.
+The `auto` strategy detects OpenClaw markers or the `openclaw` command first; otherwise it falls back to `generic`. No manual selection needed.
 
 Custom adapters can be added via the `adapters` config:
 
@@ -84,7 +55,7 @@ Custom adapters can be added via the `adapters` config:
 }
 ```
 
-### Session analysis strategy
+### 4. Session analysis strategy
 
 The current implementation uses lightweight rule-based analysis without external models:
 
@@ -96,7 +67,7 @@ The current implementation uses lightweight rule-based analysis without external
 
 When `confidence` falls below `analysis.confidence_threshold`, the generated document flags the need for human review.
 
-### Templates and metadata
+### 5. Templates and metadata
 
 Supported templates:
 
@@ -114,7 +85,7 @@ Supported metadata formats:
 | `openclaw` | Stores metadata in YAML-like front matter |
 | `json` | Outputs a JSON metadata block |
 
-### Writing and conflict handling
+### 6. Writing and conflict handling
 
 Write flow:
 
@@ -133,7 +104,7 @@ Conflict strategies:
 - `merge`: appends new analysis results.
 - `fail`: raises a user-readable error and returns a non-zero exit code.
 
-### Installer design
+### 7. Installer design
 
 `skills/experience-to-skill-generator/install.sh` is responsible for:
 
@@ -146,7 +117,7 @@ Conflict strategies:
 - Creating sample session data.
 - Cleaning up temporary files on install failure.
 
-### Validation strategy
+### 8. Validation strategy
 
 - **Unit tests**: `python3 -m unittest python-scripts/test_universal_skill_generator.py`
 - **End-to-end validation**: `python3 python-scripts/e2e_validate_universal_skill_generator.py`
@@ -159,12 +130,12 @@ E2E validation covers:
 - `diagnose`, `analyze`, `generate` commands.
 - Required sections and metadata in generated documents.
 
-### Vector engine design
+### 9. Module layout
 
-`python-scripts/vector_skill_optimizer.py` provides optional vector-based skill similarity and gap analysis:
+`python-scripts/` contains exactly three files:
 
-- **Skill vectorization**: converts skill text into a 12-dimension feature vector covering categories such as language, domain, complexity, and automation level.
-- **Similarity search**: finds existing skills similar to a query using cosine similarity (dot product of normalized vectors).
-- **Gap analysis**: identifies weak dimensions in a skill and suggests improvements or innovative combinations.
-- **Numpy optional**: all vector operations have pure-Python fallbacks; `numpy` accelerates computation when available but is not required.
-- **Persistence**: skill vectors and metadata can be saved to / loaded from JSON files.
+| File | Role |
+| --- | --- |
+| `universal_skill_generator.py` | Main CLI entry; implements all 5 subcommands (`analyze` / `generate` / `diagnose` / `config` / `validate-config`), config merging, adapter detection, session analysis, template rendering, and atomic writes |
+| `test_universal_skill_generator.py` | Unit tests for the main CLI |
+| `e2e_validate_universal_skill_generator.py` | End-to-end validation covering both `generic` and `openclaw` adapter flows |

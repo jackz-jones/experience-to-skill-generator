@@ -18,7 +18,6 @@ class UniversalSkillGeneratorTest(unittest.TestCase):
     def make_args(self, **overrides):
         defaults = {
             "config": None,
-            "agent": None,
             "input": None,
             "output_dir": None,
             "conflict": None,
@@ -165,7 +164,7 @@ class UniversalSkillGeneratorTest(unittest.TestCase):
     def test_cli_invalid_input_returns_non_zero(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             missing = Path(tmpdir) / "missing.json"
-            exit_code = usg.main(["--agent", "generic", "--input", str(missing), "analyze", "--json-lines"])
+            exit_code = usg.main(["--input", str(missing), "analyze", "--json-lines"])
             self.assertEqual(exit_code, 2)
 
 

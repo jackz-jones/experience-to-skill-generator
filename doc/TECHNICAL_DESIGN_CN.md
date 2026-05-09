@@ -2,7 +2,7 @@
 
 > [English](TECHNICAL_DESIGN.md)
 
-### 架构目标
+### 1. 架构目标
 
 `Experience-to-Skill Generator` 的目标是把特定 OpenClaw 会话分析能力升级为通用 agent 技能生成能力。核心设计原则：
 
@@ -12,25 +12,7 @@
 - **脚本友好**：所有核心命令输出 JSON 或稳定文本，错误返回非零退出码。
 - **可扩展**：通过 adapter 和模板配置扩展新的 agent 与输出格式。
 
-### 核心模块
-
-主要实现集中在 `python-scripts/universal_skill_generator.py`，辅助模块如下：
-
-| 模块 | 文件 | 关键职责 |
-| --- | --- | --- |
-| 配置加载 | `universal_skill_generator.py` | 合并默认配置、JSON 配置、环境变量和 CLI 覆盖 |
-| 配置校验 | `universal_skill_generator.py` | 校验 agent、session_sources、output、analysis、security、templates、adapters |
-| agent 适配 | `universal_skill_generator.py` | 识别 `openclaw` 或回退到 `generic`，支持自定义 adapter |
-| 会话读取 | `universal_skill_generator.py` | 读取文件或目录，支持 `json`、`jsonl`、`md`、`txt` |
-| 预处理 | `universal_skill_generator.py` | 空数据校验、角色归一化、长会话分段、最大字符截断 |
-| 脱敏 | `universal_skill_generator.py` | 清理令牌、密钥、邮箱、私有路径，并复用于日志和生成结果 |
-| 分析 | `analyze_conversation.py` | 提取任务、步骤、约束、关键词、置信度和人工审核标记 |
-| SKILL 生成 | `generate_skill.py` | 基于分析结果生成结构化 `SKILL.md` 和 metadata |
-| 向量引擎 | `vector_skill_optimizer.py` | 技能向量化、相似度搜索、缺口分析（numpy 可选，支持纯 Python 降级） |
-| 写入 | `universal_skill_generator.py` | 原子写入、相似技能检测、冲突策略处理 |
-| CLI | `universal_skill_generator.py` | `diagnose`、`analyze`、`generate`、`config`、`validate-config` |
-
-### 数据流
+### 2. 数据流
 
 ```mermaid
 flowchart TD
@@ -47,27 +29,16 @@ flowchart TD
     K --> L[原子写入 SKILL.md]
 ```
 
-### 配置合并顺序
+### 3. Agent 适配策略
 
-配置优先级由低到高：
+内置 adapter（字段需与 [universal_skill_generator.py](../python-scripts/universal_skill_generator.py) 中 `KNOWN_AGENT_ADAPTERS` 一致）：
 
-1. `DEFAULT_CONFIG`
-2. `--config` 指定的 JSON 文件
-3. 环境变量覆盖，例如 `ESG_OUTPUT_DIR`、`ESG_SESSION_DIR`
-4. CLI 参数覆盖，例如 `--input`、`--output-dir`、`--conflict`
+| Adapter | `markers` | `skill_dir` | `config_dir` | `session_dir` | `metadata_format` |
+| --- | --- | --- | --- | --- | --- |
+| `openclaw` | `[".openclaw"]` | `~/.openclaw/skills` | `~/.openclaw/config/skills/experience-to-skill-generator` | `~/.openclaw/agents` | `openclaw` |
+| `generic` | `[]` | `./generated_skills` | `./.experience-to-skill-generator` | `./sessions` | `generic` |
 
-这种设计保证默认可用，同时支持安装脚本和自动化流水线按需覆盖。
-
-### Agent 适配策略
-
-内置 adapter：
-
-| Adapter | session_dir | skill_dir | metadata_format |
-| --- | --- | --- | --- |
-| `openclaw` | `~/.openclaw/agents` | `~/.openclaw/skills` | `openclaw` |
-| `generic` | `./sessions` | `./generated_skills` | `generic` |
-
-`--agent auto` 会优先检测 OpenClaw 标记或 `openclaw` 命令；否则回退到 `generic`。
+`auto` 策略会优先检测 OpenClaw 标记或 `openclaw` 命令；否则回退到 `generic`。无需手动指定。
 
 可通过配置中的 `adapters` 扩展新 agent：
 
@@ -84,7 +55,7 @@ flowchart TD
 }
 ```
 
-### 会话分析策略
+### 4. 会话分析策略
 
 当前实现采用轻量规则分析，不依赖外部模型：
 
@@ -96,7 +67,7 @@ flowchart TD
 
 当 `confidence` 低于配置中的 `analysis.confidence_threshold` 时，生成文档会提示需要人工审核。
 
-### 模板与元数据
+### 5. 模板与元数据
 
 支持的模板：
 
@@ -114,7 +85,7 @@ flowchart TD
 | `openclaw` | 使用 YAML-like front matter 保存 metadata |
 | `json` | 输出 JSON metadata 块 |
 
-### 写入与冲突处理
+### 6. 写入与冲突处理
 
 写入流程：
 
@@ -133,7 +104,7 @@ flowchart TD
 - `merge`：追加新分析结果。
 - `fail`：抛出用户可读错误并返回非零退出码。
 
-### 安装脚本设计
+### 7. 安装脚本设计
 
 `skills/experience-to-skill-generator/install.sh` 负责：
 
@@ -146,7 +117,7 @@ flowchart TD
 - 创建示例会话数据。
 - 安装失败时清理本次创建的临时文件。
 
-### 验证策略
+### 8. 验证策略
 
 - **单元测试**：`python3 -m unittest python-scripts/test_universal_skill_generator.py`
 - **端到端验证**：`python3 python-scripts/e2e_validate_universal_skill_generator.py`
@@ -159,12 +130,12 @@ flowchart TD
 - `diagnose`、`analyze`、`generate` 命令。
 - 生成文档必要章节与 metadata。
 
-### 向量引擎设计
+### 9. 代码模块布局
 
-`python-scripts/vector_skill_optimizer.py` 提供可选的向量技能相似度和缺口分析能力：
+`python-scripts/` 目录仅包含 3 个文件：
 
-- **技能向量化**：将技能文本转为 12 维特征向量，涵盖语言、领域、复杂度、自动化水平等维度。
-- **相似度搜索**：使用余弦相似度（归一化向量点积）查找与查询最相似的已有技能。
-- **缺口分析**：识别技能中的薄弱维度，提供改进建议或创新组合方案。
-- **Numpy 可选**：所有向量运算均有纯 Python 降级实现；安装 `numpy` 可加速计算，但非必须。
-- **持久化**：技能向量和元数据可保存到 / 加载自 JSON 文件。
+| 文件 | 职责 |
+| --- | --- |
+| `universal_skill_generator.py` | 主 CLI 入口；实现全部 5 个子命令（`analyze` / `generate` / `diagnose` / `config` / `validate-config`）、配置合并、adapter 检测、会话分析、模板渲染与原子写入 |
+| `test_universal_skill_generator.py` | 主 CLI 单元测试 |
+| `e2e_validate_universal_skill_generator.py` | 覆盖 `generic` 与 `openclaw` 两种 adapter 流程的端到端验证 |

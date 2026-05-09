@@ -130,7 +130,6 @@ def load_json_file(path: Path) -> Dict[str, Any]:
 
 def apply_env_overrides(config: Dict[str, Any]) -> Dict[str, Any]:
     env_map = {
-        "ESG_AGENT": ("agent",),
         "ESG_OUTPUT_DIR": ("output", "target_dir"),
         "ESG_SESSION_DIR": ("session_sources",),
         "ESG_CONFLICT_STRATEGY": ("output", "conflict_strategy"),
@@ -320,8 +319,6 @@ def build_context(args: argparse.Namespace) -> RuntimeContext:
         config.setdefault("output", {})["target_dir"] = args.output_dir
     if getattr(args, "conflict", None):
         config.setdefault("output", {})["conflict_strategy"] = args.conflict
-    if getattr(args, "agent", None):
-        config["agent"] = args.agent
     if getattr(args, "preserve_raw", False):
         config.setdefault("security", {})["preserve_raw"] = True
 
@@ -972,7 +969,6 @@ def command_validate_config(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="自动分析 agent 会话并生成可复用 SKILL")
     parser.add_argument("--config", help="配置文件路径，JSON 格式")
-    parser.add_argument("--agent", help="agent 类型：auto/openclaw/generic", choices=["auto", "openclaw", "generic"])
     parser.add_argument("--input", help="会话文件或目录路径")
     parser.add_argument("--output-dir", help="SKILL 输出目录")
     parser.add_argument("--conflict", choices=["rename", "skip", "overwrite", "merge", "fail"], help="同名 SKILL 冲突处理策略")

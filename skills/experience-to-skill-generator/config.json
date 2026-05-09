@@ -12,187 +12,41 @@
     "python": ">=3.8",
     "memory": ">=4GB",
     "dependencies": {
-      "optional_packages": ["numpy", "scikit-learn>=1.2.0", "pandas"]
+      "optional_packages": []
     }
   },
 
   "tools": [
     {
-      "name": "analyze_session",
-      "description": "分析会话历史文件，提取有价值的技术经验和技能模式",
+      "name": "analyze",
+      "description": "读取并分析会话，输出结构化的分析结果（不写入 SKILL 文件）",
       "parameters": {
         "type": "object",
         "properties": {
           "session_path": {
             "type": "string",
-            "description": "会话文件路径或目录路径"
+            "description": "会话文件或目录路径"
           },
-          "min_score": {
-            "type": "number",
-            "description": "最低质量评分阈值，默认50",
-            "default": 50
-          },
-          "output_format": {
+          "config_path": {
             "type": "string",
-            "description": "输出格式：json/markdown/skill",
-            "default": "json",
-            "enum": ["json", "markdown", "skill"]
+            "description": "可选：自定义配置文件（JSON）路径"
+          },
+          "json_lines": {
+            "type": "boolean",
+            "description": "是否以紧凑 JSON 输出，便于脚本解析",
+            "default": false
           }
         },
         "required": ["session_path"]
       },
       "command": {
         "type": "exec",
-        "script": "python3 python-scripts/universal_skill_generator.py --input '${session_path}' analyze --min-score ${min_score} --format ${output_format}"
+        "script": "python3 python-scripts/universal_skill_generator.py ${config_path:+--config '${config_path}'} --input '${session_path}' analyze ${json_lines:+--json-lines}"
       }
     },
     {
-      "name": "generate_skill",
-      "description": "基于分析结果生成标准的 SKILL.md 文档",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "analysis_data": {
-            "type": "object",
-            "description": "会话分析结果，JSON格式"
-          },
-          "template_name": {
-            "type": "string",
-            "description": "使用的技能模板名称",
-            "default": "standard"
-          },
-          "output_dir": {
-            "type": "string",
-            "description": "输出目录路径",
-            "default": "generated_skills/"
-          }
-        },
-        "required": ["analysis_data"]
-      },
-      "command": {
-        "type": "exec",
-        "script": "python3 -c \"import json, sys; data=json.loads('${analysis_data:json}'); from python-scripts.generate_skill import generate_skill_from_analysis; skill=generate_skill_from_analysis(data); print(json.dumps(skill))\""
-      }
-    },
-    {
-      "name": "batch_generate",
-      "description": "批量处理多个会话历史，自动生成技能库",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "input_dir": {
-            "type": "string",
-            "description": "输入会话目录路径"
-          },
-          "output_dir": {
-            "type": "string",
-            "description": "输出技能目录路径",
-            "default": "skill_library/"
-          },
-          "batch_size": {
-            "type": "number",
-            "description": "批量处理大小，默认10",
-            "default": 10
-          },
-          "concurrent": {
-            "type": "number",
-            "description": "并发处理数，默认2",
-            "default": 2
-          }
-        },
-        "required": ["input_dir"]
-      },
-      "command": {
-        "type": "exec",
-        "script": "python3 python-scripts/universal_skill_generator.py --input '${input_dir}' --output-dir '${output_dir}' --batch-size ${batch_size} generate"
-      }
-    },
-    {
-      "name": "assess_skill",
-      "description": "评估技能文档的质量，给出改进建议",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "skill_path": {
-            "type": "string",
-            "description": "技能文件路径"
-          },
-          "assessment_dimensions": {
-            "type": "array",
-            "description": "评估维度数组，可选",
-            "items": {
-              "type": "string"
-            },
-            "default": ["技术深度", "商业价值", "工程可用性", "创新性", "扩展性"]
-          }
-        },
-        "required": ["skill_path"]
-      },
-      "command": {
-        "type": "exec",
-        "script": "python3 python-scripts/universal_skill_generator.py --input '${skill_path}' diagnose"
-      }
-    },
-    {
-      "name": "vector_search",
-      "description": "在技能库中基于语义相似度搜索相关技能",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "query": {
-            "type": "string",
-            "description": "搜索查询词"
-          },
-          "skills_dir": {
-            "type": "string",
-            "description": "技能库目录路径",
-            "default": "generated_skills/"
-          },
-          "limit": {
-            "type": "number",
-            "description": "返回结果数量，默认5",
-            "default": 5
-          }
-        },
-        "required": ["query"]
-      },
-      "command": {
-        "type": "exec",
-        "script": "python3 python-scripts/vector_skill_optimizer.py --search '${query}' --dir '${skills_dir}' --limit ${limit}"
-      }
-    },
-    {
-      "name": "openclaw_integrate",
-      "description": "将技能集成到 OpenClaw 平台，包括技能安装、配置和启用",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "skill_path": {
-            "type": "string",
-            "description": "技能文件路径"
-          },
-          "action": {
-            "type": "string",
-            "description": "操作：install/update/remove/status",
-            "default": "install",
-            "enum": ["install", "update", "remove", "status"]
-          },
-          "auto_enable": {
-            "type": "boolean",
-            "description": "安装后自动启用，默认true",
-            "default": true
-          }
-        },
-        "required": ["skill_path", "action"]
-      },
-      "command": {
-        "type": "exec",
-        "script": "if [ '${action}' = 'install' ]; then openclaw skills install '${skill_path}'; elif [ '${action}' = 'update' ]; then openclaw skills update '${skill_path}'; elif [ '${action}' = 'remove' ]; then openclaw skills uninstall '${skill_path}'; else openclaw skills list; fi"
-      }
-    },
-    {
-      "name": "universal_generate",
-      "description": "在 OpenClaw 或通用 agent 环境中读取会话并生成结构化 SKILL",
+      "name": "generate",
+      "description": "分析会话并写入 SKILL 文件到输出目录",
       "parameters": {
         "type": "object",
         "properties": {
@@ -202,44 +56,105 @@
           },
           "output_dir": {
             "type": "string",
-            "description": "生成 SKILL 的输出目录",
-            "default": "generated_skills/"
-          },
-          "agent": {
-            "type": "string",
-            "description": "agent 类型：auto/openclaw/generic",
-            "default": "auto",
-            "enum": ["auto", "openclaw", "generic"]
+            "description": "可选：SKILL 输出目录，覆盖配置中的 output.target_dir"
           },
           "conflict_strategy": {
             "type": "string",
             "description": "同名 SKILL 冲突处理策略",
-            "default": "rename",
-            "enum": ["rename", "skip", "overwrite", "merge"]
+            "enum": ["rename", "skip", "overwrite", "merge", "fail"]
           },
           "skill_name": {
             "type": "string",
-            "description": "可选的生成 SKILL 名称"
+            "description": "可选：指定生成的 SKILL 名称"
+          },
+          "config_path": {
+            "type": "string",
+            "description": "可选：自定义配置文件（JSON）路径"
+          },
+          "preserve_raw": {
+            "type": "boolean",
+            "description": "保留原始会话内容（启用前请确认不会泄露敏感信息）",
+            "default": false
           }
         },
         "required": ["session_path"]
       },
       "command": {
         "type": "exec",
-        "script": "python3 python-scripts/universal_skill_generator.py --agent ${agent} --input '${session_path}' --output-dir '${output_dir}' --conflict ${conflict_strategy} generate --name '${skill_name}'"
+        "script": "python3 python-scripts/universal_skill_generator.py ${config_path:+--config '${config_path}'} --input '${session_path}' ${output_dir:+--output-dir '${output_dir}'} ${conflict_strategy:+--conflict ${conflict_strategy}} ${preserve_raw:+--preserve-raw} generate ${skill_name:+--name '${skill_name}'}"
+      }
+    },
+    {
+      "name": "diagnose",
+      "description": "诊断运行环境、配置和会话来源，定位问题",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session_path": {
+            "type": "string",
+            "description": "会话文件或目录路径"
+          },
+          "config_path": {
+            "type": "string",
+            "description": "可选：自定义配置文件（JSON）路径"
+          },
+          "json_lines": {
+            "type": "boolean",
+            "description": "是否以紧凑 JSON 输出，便于脚本解析",
+            "default": false
+          }
+        },
+        "required": ["session_path"]
+      },
+      "command": {
+        "type": "exec",
+        "script": "python3 python-scripts/universal_skill_generator.py ${config_path:+--config '${config_path}'} --input '${session_path}' diagnose ${json_lines:+--json-lines}"
+      }
+    },
+    {
+      "name": "config",
+      "description": "显示合并后的配置和适配策略，便于排查 agent 自动检测结果",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "config_path": {
+            "type": "string",
+            "description": "可选：自定义配置文件（JSON）路径"
+          }
+        },
+        "required": []
+      },
+      "command": {
+        "type": "exec",
+        "script": "python3 python-scripts/universal_skill_generator.py ${config_path:+--config '${config_path}'} config"
+      }
+    },
+    {
+      "name": "validate-config",
+      "description": "校验配置文件、环境变量与 CLI 覆盖项是否合法",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "config_path": {
+            "type": "string",
+            "description": "可选：自定义配置文件（JSON）路径"
+          }
+        },
+        "required": []
+      },
+      "command": {
+        "type": "exec",
+        "script": "python3 python-scripts/universal_skill_generator.py ${config_path:+--config '${config_path}'} validate-config"
       }
     }
   ],
 
   "mcp": {
     "enabled": false,
-    "description": "提供MCP服务，支持技能生成API和实时分析能力"
+    "description": "暂未启用 MCP 服务"
   },
 
   "defaultConfiguration": {
-    "quality_threshold": 55,
-    "output_format": "openclaw_skill",
-    "analysis_mode": "automatic",
     "agent": "auto",
     "compatibility_mode": true,
     "session_sources": [
@@ -249,34 +164,54 @@
         "patterns": ["*.json", "*.jsonl", "*.md", "*.txt"]
       },
       {
-        "type": "generic",
-        "path": "./sessions",
-        "patterns": ["*.json", "*.jsonl", "*.md", "*.txt"]
+        "type": "openclaw",
+        "path": "~/.openclaw/agents",
+        "patterns": ["*.jsonl", "*.json"]
       }
     ],
     "output": {
-      "target_dir": "generated_skills/",
+      "target_dir": "generated_skills",
+      "format": "markdown",
       "conflict_strategy": "rename",
       "metadata_format": "generic"
-    }
+    },
+    "analysis": {
+      "min_score": 50,
+      "max_chars": 120000,
+      "chunk_chars": 30000,
+      "confidence_threshold": 0.55
+    },
+    "security": {
+      "redact_sensitive": true,
+      "preserve_raw": false
+    },
+    "templates": {
+      "skill": "standard",
+      "include_sources": true
+    },
+    "adapters": {}
   },
 
   "examples": [
     {
-      "description": "分析会话并生成技能",
-      "command": "universal_generate {\"session_path\": \"./sessions\", \"output_dir\": \"./generated_skills\", \"agent\": \"auto\", \"conflict_strategy\": \"rename\"}"
+      "description": "分析会话并生成 SKILL 文件",
+      "command": "generate {\"session_path\": \"~/.openclaw/agents\", \"output_dir\": \"./generated_skills\", \"conflict_strategy\": \"rename\"}"
     },
     {
-      "description": "分析指定会话文件",
-      "command": "analyze_session {\"session_path\": \"./sessions/example.json\", \"min_score\": 60}"
+      "description": "仅分析会话，输出结构化结果",
+      "command": "analyze {\"session_path\": \"./sessions/example.json\", \"json_lines\": true}"
     },
     {
-      "description": "批量生成技能库",
-      "command": "batch_generate {\"input_dir\": \"./sessions/\", \"output_dir\": \"./skill_library/\"}"
+      "description": "诊断运行环境和会话来源",
+      "command": "diagnose {\"session_path\": \"~/.openclaw/agents\"}"
     },
     {
-      "description": "评估已生成技能的质量",
-      "command": "assess_skill {\"skill_path\": \"generated_skills/example.md\"}"
+      "description": "查看合并后的配置和适配策略",
+      "command": "config {}"
+    },
+    {
+      "description": "校验配置文件",
+      "command": "validate-config {\"config_path\": \"./my-config.json\"}"
     }
   ]
 }

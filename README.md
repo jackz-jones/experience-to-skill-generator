@@ -2,180 +2,69 @@
 
 > [中文](README_CN.md)
 
-Experience-to-Skill Generator is a universal SKILL generator for agent conversations. It reads OpenClaw or generic session logs, extracts task goals, key steps, constraints, and reusable practices, then writes a structured `SKILL.md` for knowledge reuse and human review.
+Turn your AI conversation logs into reusable skill documents — with a single command.
 
-### What it does
+## 1. What is this?
 
-- **Agent adaptation**: supports `auto`, `openclaw`, and `generic`, with extension points for custom agents.
-- **Session ingestion**: reads `json`, `jsonl`, `md`, and `txt` files from a single file or directory.
-- **Long-session handling**: chunks long conversations and applies controlled truncation.
-- **Sensitive data redaction**: redacts tokens, secrets, emails, and private paths by default.
-- **Structured SKILL output**: includes usage scenarios, trigger conditions, execution steps, cautions, examples, and metadata.
-- **Conflict-safe writing**: supports `rename`, `skip`, `overwrite`, `merge`, and `fail`.
-- **Scriptable CLI**: provides JSON output, stable exit codes, config inspection, diagnostics, and end-to-end validation.
+Experience-to-Skill Generator is a CLI tool that **automatically analyzes your AI conversation history**, extracts valuable workflows, technical solutions, and best practices, then generates a structured `SKILL.md` skill document.
 
-### Use cases
+The generated `SKILL.md` can be used by AI agents as a skill. OpenClaw loads it automatically; other agents (Claude Code, Cursor, etc.) require manual integration (paste at conversation start, write into `CLAUDE.md` / `.cursorrules`, etc.).
 
-- **OpenClaw session review**: read conversation records from OpenClaw workspaces or agent directories.
-- **Generic agent compatibility**: generate skills from any `json`, `jsonl`, `md`, or `txt` session directory.
-- **Automation integration**: use JSON output, stable exit codes, and conflict strategies in CI or scheduled jobs.
-- **Human review workflow**: mark generated skills for review when confidence is low.
-- **Enterprise knowledge management**: automatically turn team discussions into standardized skill documents.
-- **Developer toolkit**: automate workflow capture and script recording for personal productivity.
+## 2. What can I do with it?
 
-### Documentation
+| Scenario | Description | Who is it for |
+| --- | --- | --- |
+| 🏢 **Team Knowledge Capture** | Turn code reviews, technical discussions, and team conversations into standardized skill documents | Tech team leads |
+| 👨‍💻 **Developer Toolkit** | Distill your AI conversations into reusable workflows | Developers |
+| 🤖 **OpenClaw Skill Integration** | Use as an OpenClaw skill package, invoked automatically by the agent | OpenClaw users |
+| 🏭 **Automation / CI Integration** | Integrate with automation pipelines using JSON output and stable exit codes | DevOps / SRE |
 
-- **Technical Design**: [doc/TECHNICAL_DESIGN.md](doc/TECHNICAL_DESIGN.md)
-- **Configuration Reference**: [doc/CONFIGURATION.md](doc/CONFIGURATION.md)
-- **OpenClaw Skill Definition**: [skills/experience-to-skill-generator/SKILL.md](skills/experience-to-skill-generator/SKILL.md)
+## 3. Quick Start
 
-### Directory structure
+### Prerequisites
 
-```text
-.
-├── README.md
-├── README_CN.md
-├── doc/
-│   ├── TECHNICAL_DESIGN.md
-│   ├── TECHNICAL_DESIGN_CN.md
-│   ├── CONFIGURATION.md
-│   └── CONFIGURATION_CN.md
-├── python-scripts/
-│   ├── universal_skill_generator.py       # Core CLI entry point
-│   ├── analyze_conversation.py            # Session analysis module
-│   ├── generate_skill.py                  # SKILL rendering module
-│   ├── vector_skill_optimizer.py          # Vector similarity engine (numpy optional)
-│   ├── e2e_validate_universal_skill_generator.py
-│   └── test_universal_skill_generator.py
-└── skills/
-    └── experience-to-skill-generator/
-        ├── SKILL.md
-        ├── config.json
-        └── install.sh
-```
+Python 3.8+ (no other dependencies required; `numpy` / `scikit-learn` are optional for acceleration)
 
-### Quick start
-
-#### 1. Run from source
+### Option A: Run from source (no installation needed)
 
 ```bash
+# Clone the repo
+git clone https://github.com/jackz-jones/experience-to-skill-generator.git
+cd experience-to-skill-generator
+
+# Prepare session files (place in sessions/ directory; supports .json / .jsonl / .md / .txt)
+mkdir sessions
+cp /path/to/your/ai-conversation.json sessions/
+
+# ① Diagnose environment (recommended first step)
+python3 python-scripts/universal_skill_generator.py --input ./sessions diagnose
+
+# ② Analyze session
+python3 python-scripts/universal_skill_generator.py --input ./sessions/session.json analyze
+
+# ③ Generate skill document
 python3 python-scripts/universal_skill_generator.py \
-  --agent generic \
   --input ./sessions/session.json \
   --output-dir ./generated_skills \
-  --conflict rename \
-  generate --name reusable-flow
+  generate --name my-first-skill
 ```
 
-The generated file is written to:
-
-```text
-./generated_skills/reusable-flow/SKILL.md
-```
-
-#### 2. Install as a local command
+### Option B: Install as a local command (recommended for daily use)
 
 ```bash
-ESG_AGENT=generic ESG_NON_INTERACTIVE=1 \
-./skills/experience-to-skill-generator/install.sh
+# One-step install (ESG_NON_INTERACTIVE=1 skips interactive confirmation)
+ESG_NON_INTERACTIVE=1 ./skills/experience-to-skill-generator/install.sh
+
+# After installation, use the short command directly
+experience-to-skill-generator --input ./sessions/session.json analyze
+experience-to-skill-generator --input ./sessions/session.json --output-dir ./generated_skills generate --name my-skill
 ```
 
-Then run:
+> 💡 The install script auto-detects your environment: if OpenClaw is detected, it installs as a native skill; otherwise it uses generic mode. No manual selection needed.
 
-```bash
-experience-to-skill-generator --agent generic --input ./sessions diagnose
-experience-to-skill-generator --agent generic --input ./sessions/session.json analyze --json-lines
-experience-to-skill-generator --agent generic --input ./sessions/session.json --output-dir ./generated_skills generate --name reusable-flow
-```
+### Session File Format
 
-#### 3. Install for OpenClaw
-
-```bash
-ESG_AGENT=openclaw ESG_NON_INTERACTIVE=1 \
-./skills/experience-to-skill-generator/install.sh
-```
-
-If the `openclaw` command is unavailable, the installer falls back to copy-only behavior so the universal CLI remains usable.
-
-#### 4. Custom install paths
-
-```bash
-ESG_AGENT=generic \
-ESG_SKILL_DIR="$HOME/.agent/skills/experience-to-skill-generator" \
-ESG_CONFIG_DIR="$HOME/.agent/config/experience-to-skill-generator" \
-ESG_BIN_DIR="$HOME/.local/bin" \
-ESG_NON_INTERACTIVE=1 \
-./skills/experience-to-skill-generator/install.sh
-```
-
-### Commands
-
-```bash
-python3 python-scripts/universal_skill_generator.py [global options] <command> [command options]
-```
-
-After installation:
-
-```bash
-experience-to-skill-generator [global options] <command> [command options]
-```
-
-| Command | Description |
-| --- | --- |
-| `diagnose` | Inspect Python, adapter strategy, and session sources |
-| `analyze` | Read sessions and print structured analysis JSON |
-| `generate` | Analyze sessions and write a structured `SKILL.md` |
-| `config` | Print merged configuration and adapter details |
-| `validate-config` | Validate config files, environment variables, and CLI overrides |
-
-Common global flags:
-
-| Flag | Description |
-| --- | --- |
-| `--config` | JSON configuration file path |
-| `--agent` | `auto`, `openclaw`, or `generic` |
-| `--input` | Session file or directory path |
-| `--output-dir` | Output directory for generated skills |
-| `--conflict` | `rename`, `skip`, `overwrite`, `merge`, or `fail` |
-| `--preserve-raw` | Preserve raw content; make sure no sensitive data is exposed |
-
-#### Analyze output
-
-The `analyze` command outputs structured JSON containing:
-
-- `summary`: message count, source file, chunk info, and analysis time.
-- `tasks`: main tasks extracted from user messages.
-- `key_steps`: key steps extracted from assistant messages.
-- `constraints`: requirements, prohibitions, and cautions.
-- `keywords`: extracted keywords.
-- `confidence`: analysis confidence score.
-- `requires_review`: whether human review is recommended.
-
-#### Generate example
-
-```json
-{
-  "skill_name": "reusable-flow",
-  "write_result": {
-    "path": "generated_skills/reusable-flow/SKILL.md",
-    "action": "created",
-    "reason": "new_skill"
-  },
-  "confidence": 0.8,
-  "requires_review": false
-}
-```
-
-### Supported inputs
-
-| Format | Behavior |
-| --- | --- |
-| `.json` | Reads `messages`, `conversation`, or a single `message` object |
-| `.jsonl` | Reads one JSON object per line; invalid lines are treated as text |
-| `.md` | Uses the whole file as one text message |
-| `.txt` | Uses the whole file as one text message |
-
-Recommended JSON example:
+Supports `.json`, `.jsonl`, `.md`, and `.txt` formats. Recommended JSON format:
 
 ```json
 {
@@ -186,76 +75,119 @@ Recommended JSON example:
 }
 ```
 
-### Output structure
+<details>
+<summary>👉 Where to Find Agent Conversation Files</summary>
 
-Each skill is written to:
+#### 🟣 OpenClaw
 
-```text
-<output-dir>/<skill-name>/SKILL.md
+```bash
+~/.openclaw/agents/           # Conversation file directory
+~/.openclaw/workspace/memory/ # Workspace memory directory
 ```
 
-Standard template sections:
+OpenClaw automatically saves each agent conversation under `~/.openclaw/agents/`.
 
-- `metadata`
-- `Usage Scenarios`
-- `Trigger Conditions`
-- `Execution Steps`
-- `Cautions`
-- `Example Usage`
-- `Quality & Source`
+#### 🟢 Claude Code (CLI)
 
-### Configuration
+```bash
+~/.claude/projects/<project-path>/*.jsonl  # Per-project archived conversations (JSONL format)
+~/.claude/history.jsonl                     # Global history log
+```
 
-Configuration precedence (low to high):
+```bash
+# Copy a project session to the sessions directory
+cp ~/.claude/projects/-Users-zx-Desktop-ai-myproject/<session-id>.jsonl ./sessions/
+```
 
-1. Built-in defaults in `python-scripts/universal_skill_generator.py`
-2. JSON file specified by `--config`
-3. `ESG_*` environment variables
-4. CLI flags
+#### 🟡 Hermes
 
-Common environment variables:
+```bash
+~/.hermes/sessions/          # Session file directory (*.jsonl, *.json)
+~/.hermes/.hermes_history    # Conversation history file
+```
 
-| Variable | Description |
+#### 🔵 Cursor
+
+```bash
+~/Library/Application Support/Cursor/Session Storage/  # LevelDB database, not plain JSON files
+```
+
+Cursor uses browser-style storage. We recommend manually copying conversation content from the editor.
+
+#### ⚪ ChatGPT (Desktop App)
+
+No standard export function. Copy conversation content from the web interface and save as `.json` or `.md` files.
+
+</details>
+
+## 4. What's in the Generated SKILL.md?
+
+| Section | Description |
 | --- | --- |
-| `ESG_AGENT` | `auto`, `openclaw`, or `generic` |
-| `ESG_SESSION_DIR` | Default session source directory |
-| `ESG_OUTPUT_DIR` | Default skill output directory |
-| `ESG_CONFLICT_STRATEGY` | Default conflict strategy |
-| `ESG_MIN_SCORE` | Analysis score threshold |
-| `ESG_PRESERVE_RAW` | Whether to preserve raw session content |
-| `ESG_SKILL_DIR` | Installer target skill directory |
-| `ESG_CONFIG_DIR` | Installer target config directory |
-| `ESG_BIN_DIR` | Installer command entry directory |
-| `ESG_NON_INTERACTIVE` | Set to `1` to skip install confirmation |
-| `ESG_INSTALL_MODE` | Set to `copy-only` to skip agent registration |
+| `metadata` | Metadata (skill name, version, source, etc.) |
+| `Usage Scenarios` | When to use this skill |
+| `Trigger Conditions` | What triggers it |
+| `Execution Steps` | Step-by-step instructions |
+| `Cautions` | What to watch out for |
+| `Example Usage` | Real-world examples |
+| `Quality & Source` | Confidence score and source info |
 
-See [doc/CONFIGURATION.md](doc/CONFIGURATION.md) for full reference.
+## 5. OpenClaw Mode vs Generic Mode
 
-### Security and conflict handling
-
-Defaults:
-
-- **Redaction enabled**: tokens, secrets, emails, and private paths are cleaned from analysis, generated docs, and diagnostics.
-- **Atomic writes**: writes to a temporary file first, then replaces the target `SKILL.md`.
-- **Conflict control**: same-name or similar skills are handled by the `--conflict` strategy.
-
-Conflict strategies:
-
-| Strategy | Behavior | Use case |
+| | OpenClaw Native Mode | Generic Mode |
 | --- | --- | --- |
-| `rename` | Auto-generates `name-2`, `name-3`, etc. | Recommended default; preserves history |
-| `skip` | Keeps existing skill, writes nothing | Batch jobs to avoid duplicates |
-| `overwrite` | Creates `.bak` backup before replacing | Explicit refresh of a same-name skill |
-| `merge` | Appends new content to existing `SKILL.md` | Accumulate multiple sessions into one skill |
-| `fail` | Returns non-zero exit code on conflict | CI or strict automation pipelines |
+| **Trigger** | `~/.openclaw` directory or `openclaw` command detected | OpenClaw not detected |
+| **Skill Directory** | `~/.openclaw/skills/experience-to-skill-generator` | `~/.experience-to-skill-generator/skills/experience-to-skill-generator` |
+| **Session Source** | Automatically reads from `~/.openclaw/agents/` | Manually place in `./sessions/` or specify with `--input` |
+| **Agent Auto-loading** | ✅ Registered via `openclaw skills install` during installation (requires the OpenClaw runtime to be installed and started) | ❌ Manual integration required |
 
-Redaction covers:
+### How to Use Generated Skills with Non-OpenClaw Agents?
 
-- API key, token, secret, password
-- Bearer token, OpenAI key, AWS key, GitHub token, Slack token
-- Private keys, SSH public key fragments
-- Email addresses
-- Private paths such as `/Users/<name>`, `/home/<name>`, `/root/...`
+1. **Paste at conversation start**: Paste `SKILL.md` content before your question when starting a new chat
+2. **Project-level config files**: Write key points into `CLAUDE.md` (Claude Code) or `.cursorrules` (Cursor) — these agents auto-load these files
+3. **System prompt**: Add `SKILL.md` content to your agent's custom system prompt
+
+> 💡 **In a nutshell**: OpenClaw uses "auto-injection", other agents use "manual feeding" — the end result is similar, just the delivery method differs.
+
+## 6. CLI Reference
+
+| Command | Description | Example |
+| --- | --- | --- |
+| `diagnose` | Diagnose runtime environment | `experience-to-skill-generator --input ./sessions diagnose` |
+| `analyze` | Analyze session and output JSON | `experience-to-skill-generator --input ./sessions/session.json analyze --json-lines` |
+| `generate` | Generate SKILL.md | `experience-to-skill-generator --input ./sessions/session.json --output-dir ./generated_skills generate --name my-skill` |
+| `config` | Print merged configuration | `experience-to-skill-generator config` |
+| `validate-config` | Validate configuration | `experience-to-skill-generator validate-config` |
+
+| Flag | Description |
+| --- | --- |
+| `--input` | Session file or directory path (required) |
+| `--output-dir` | Output directory for generated skills |
+| `--conflict` | Conflict strategy: `rename` / `skip` / `overwrite` / `merge` / `fail` |
+| `--preserve-raw` | Preserve raw content (⚠️ may expose sensitive data) |
+| `--config` | JSON configuration file path |
+
+### Exit Codes
+
+| Exit Code | Meaning |
+| --- | --- |
+| `0` | Success |
+| `2` | Configuration or runtime error |
+| `130` | User interrupt (Ctrl+C) |
+
+> 📋 For full configuration reference (environment variables, JSON config options, adapters, etc.), see [doc/CONFIGURATION.md](doc/CONFIGURATION.md).
+
+## 7. Configuration
+
+Configuration precedence (low to high): built-in defaults → `--config` file → `ESG_*` environment variables → CLI flags.
+
+> 📋 For full configuration reference, see [doc/CONFIGURATION.md](doc/CONFIGURATION.md).
+
+## 8. Security & Redaction
+
+- **Redaction enabled by default**: tokens, secrets, emails, and private paths are automatically cleaned from results
+- **Atomic writes**: writes to a temporary file first, then replaces the target
+- **Conflict control**: same-name or similar skills are handled by the `--conflict` strategy
 
 To preserve raw content:
 
@@ -263,61 +195,78 @@ To preserve raw content:
 experience-to-skill-generator --preserve-raw --input ./sessions analyze
 ```
 
-Make sure the session content does not expose sensitive information before enabling this option.
+> ⚠️ Make sure session content does not expose sensitive information before enabling this option.
 
-### Automation example
+## 9. Automation Example
 
-```bash
-set -e
+Add skill generation to CI/CD so that new conversation files automatically generate skill documents:
 
-OUTPUT="./generated_skills"
-SESSION="./sessions/session.json"
+```yaml
+# .github/workflows/skill-generator.yml
+name: Auto Generate Skills
+on:
+  push:
+    paths: ['sessions/**']    # Trigger only when conversation files change
 
-experience-to-skill-generator \
-  --agent generic \
-  --input "$SESSION" \
-  --output-dir "$OUTPUT" \
-  --conflict fail \
-  generate --name ci-generated-skill
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: ESG_NON_INTERACTIVE=1 ./skills/experience-to-skill-generator/install.sh
+      - run: experience-to-skill-generator --input ./sessions --output-dir ./skill_library --conflict rename generate
+      - run: |
+          git config user.name "skill-bot"
+          git config user.email "bot@example.com"
+          git add ./skill_library/
+          git diff --cached --quiet || git commit -m "🤖 auto-generate skills from sessions"
+          git push
 ```
 
-### Deliverables
+Key points: `--conflict rename` ensures incremental safety; `paths: sessions/**` avoids unnecessary triggers.
 
-| Category | Files |
-| --- | --- |
-| Core CLI | `universal_skill_generator.py`, `analyze_conversation.py`, `generate_skill.py`, `vector_skill_optimizer.py` |
-| Testing | `test_universal_skill_generator.py`, `e2e_validate_universal_skill_generator.py` |
-| OpenClaw skill | `skills/experience-to-skill-generator/SKILL.md`, `skills/experience-to-skill-generator/config.json`, `skills/experience-to-skill-generator/install.sh` |
-| Documentation | `README.md`, `README_CN.md`, `doc/TECHNICAL_DESIGN.md`, `doc/TECHNICAL_DESIGN_CN.md`, `doc/CONFIGURATION.md`, `doc/CONFIGURATION_CN.md` |
+## 10. Troubleshooting
 
-### Verification checklist
+### ❓ `command not found: experience-to-skill-generator`
 
-- ✅ **Feature completeness** — all CLI subcommands implemented and tested
-- ✅ **Multi-agent adaptation** — supports `openclaw` and `generic` adapter modes
-- ✅ **Integration maturity** — complete OpenClaw skill adaptation + universal CLI
-- ✅ **Code quality** — Python scripts pass unit tests and end-to-end validation
-- ✅ **Documentation completeness** — bilingual technical design and configuration reference
+The executable is not in your PATH:
 
-### Validation
+```bash
+export PATH="$HOME/.local/bin:$PATH"   # Add to ~/.bashrc or ~/.zshrc
+```
 
-Unit tests:
+### ❓ `Session file not found`
+
+Verify the `--input` path and file format (`.json` / `.jsonl` / `.md` / `.txt`):
+
+```bash
+ls ./sessions/session.json
+python3 -c "import json; json.load(open('./sessions/session.json')); print('OK')"
+```
+
+### ❓ Generated SKILL.md is low quality
+
+Session content is too short or lacks enough interaction turns. Make sure it includes multiple rounds of user/assistant dialogue with clear problem descriptions and solution steps.
+
+### ❓ How to undo an installation
+
+```bash
+rm -rf ~/.local/bin/experience-to-skill-generator
+rm -rf ~/.experience-to-skill-generator                              # Generic mode (skill files live under skills/experience-to-skill-generator/)
+rm -rf ~/.openclaw/skills/experience-to-skill-generator              # OpenClaw mode
+rm -rf ~/.openclaw/config/skills/experience-to-skill-generator      # OpenClaw mode (config dir)
+```
+
+## 11. Verification
 
 ```bash
 python3 -m unittest python-scripts/test_universal_skill_generator.py
-```
-
-End-to-end validation:
-
-```bash
 python3 python-scripts/e2e_validate_universal_skill_generator.py
 ```
 
-The e2e validation covers both `generic` and `openclaw` adapters and confirms that `diagnose`, `analyze`, and `generate` produce valid `SKILL.md` files.
-
-### Contact
-
-Developed by jackz-jones — https://github.com/jackz-jones/experience-to-skill-generator
-
-### License
+## 12. License
 
 Apache License 2.0. See [LICENSE](LICENSE).

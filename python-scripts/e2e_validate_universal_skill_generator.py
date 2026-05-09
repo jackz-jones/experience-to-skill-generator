@@ -73,13 +73,13 @@ def validate_agent_flow(base_dir, agent):
     output_dir = base_dir / f"{agent}-generated-skills"
     skill_name = f"{agent}-universal-flow"
 
-    diagnose_payload = json.loads(run_command(["--agent", agent, "--input", str(session_path), "diagnose"]))
-    if diagnose_payload["agent"] != agent:
-        raise AssertionError(f"诊断结果 agent 不匹配: {diagnose_payload['agent']} != {agent}")
+    diagnose_payload = json.loads(run_command(["--input", str(session_path), "diagnose"]))
+    if diagnose_payload["agent"] not in {"generic", "openclaw"}:
+        raise AssertionError(f"诊断结果 agent 不在预期范围内: {diagnose_payload['agent']}")
     if not diagnose_payload["session_sources"] or not diagnose_payload["session_sources"][0]["exists"]:
         raise AssertionError("诊断结果未识别会话来源")
 
-    analysis_payload = json.loads(run_command(["--agent", agent, "--input", str(session_path), "analyze", "--json-lines"]))
+    analysis_payload = json.loads(run_command(["--input", str(session_path), "analyze", "--json-lines"]))
     if not analysis_payload.get("tasks"):
         raise AssertionError("分析结果未提取任务")
     if analysis_payload.get("confidence", 0) <= 0:
@@ -88,8 +88,6 @@ def validate_agent_flow(base_dir, agent):
     generate_payload = json.loads(
         run_command(
             [
-                "--agent",
-                agent,
                 "--input",
                 str(session_path),
                 "--output-dir",
