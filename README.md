@@ -215,9 +215,12 @@ experience-to-skill-generator --preserve-raw --input ./sessions analyze
 
 > ⚠️ Make sure session content does not expose sensitive information before enabling this option.
 
-## 9. Automation Example
+## 9. Advanced: CI/CD Automation
 
-Add skill generation to CI/CD so that new conversation files automatically generate skill documents:
+> 💡 **When to use**: Teams managing sanitized session files in a **private repository** who want skill documents generated automatically on each push. For individual users, running the command locally is sufficient — no CI/CD needed.
+
+<details>
+<summary>👉 Expand to see GitHub Actions example</summary>
 
 ```yaml
 # .github/workflows/skill-generator.yml
@@ -244,7 +247,14 @@ jobs:
           git push
 ```
 
-Key points: `--conflict rename` ensures incremental safety; `paths: sessions/**` avoids unnecessary triggers.
+**Important notes:**
+
+- `--conflict rename` prevents overwriting existing skill files; each run writes to a new directory
+- `paths: sessions/**` avoids triggering the workflow on unrelated commits
+- Each run reads **all** files under sessions/ and performs a fresh analysis — it is not incremental
+- Session files often contain private information; make sure they are sanitized before committing
+
+</details>
 
 ## 10. Troubleshooting
 

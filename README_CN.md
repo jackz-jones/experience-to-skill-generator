@@ -215,9 +215,12 @@ experience-to-skill-generator --preserve-raw --input ./sessions analyze
 
 > ⚠️ 启用 `--preserve-raw` 前请确认会话内容不会泄露敏感信息。
 
-## 9. 自动化集成示例
+## 9. 高级用法：CI/CD 自动化集成
 
-将技能生成接入 CI/CD，每当有新对话文件提交时自动生成技能文档：
+> 💡 **适用场景**：团队在**私有仓库**中统一管理脱敏后的会话文件，希望每次提交后自动生成技能文档。对于个人用户，本地直接运行命令即可，通常不需要 CI/CD。
+
+<details>
+<summary>👉 展开查看 GitHub Actions 配置示例</summary>
 
 ```yaml
 # .github/workflows/skill-generator.yml
@@ -244,7 +247,14 @@ jobs:
           git push
 ```
 
-关键点：`--conflict rename` 保证增量安全；`paths: sessions/**` 避免不必要的触发。
+**注意事项：**
+
+- `--conflict rename` 保证不会覆盖已有技能文件，每次生成写入新目录
+- `paths: sessions/**` 避免无关提交触发工作流
+- 每次运行会读取 sessions/ 下**所有**文件重新分析，生成全新的 SKILL（非增量追加）
+- 会话文件通常包含私人信息，提交到仓库前请确保已脱敏
+
+</details>
 
 ## 10. 常见问题
 

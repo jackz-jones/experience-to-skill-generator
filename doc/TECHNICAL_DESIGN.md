@@ -177,3 +177,7 @@ E2E validation covers:
 | `universal_skill_generator.py` | Main CLI entry; implements all 5 subcommands (`analyze` / `generate` / `diagnose` / `config` / `validate-config`), config merging, adapter detection, session analysis, template rendering, and atomic writes |
 | `test_universal_skill_generator.py` | Unit tests for the main CLI |
 | `e2e_validate_universal_skill_generator.py` | End-to-end validation covering both `generic` and `openclaw` adapter flows |
+
+### 10. Known Limitations
+
+The current version uses a pure rule engine for session analysis, with known flaws including narrow coverage, no semantic understanding, and no self-verification mechanism. See [Early Version Limitations Analysis](LIMITATIONS.md) for details.

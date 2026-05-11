@@ -177,3 +177,7 @@ exec "/usr/bin/python3" "/home/user/experience-to-skill-generator/python-scripts
 | `universal_skill_generator.py` | 主 CLI 入口；实现全部 5 个子命令（`analyze` / `generate` / `diagnose` / `config` / `validate-config`）、配置合并、adapter 检测、会话分析、模板渲染与原子写入 |
 | `test_universal_skill_generator.py` | 主 CLI 单元测试 |
 | `e2e_validate_universal_skill_generator.py` | 覆盖 `generic` 与 `openclaw` 两种 adapter 流程的端到端验证 |
+
+### 10. 已知局限性
+
+当前版本采用纯规则引擎实现会话分析，存在覆盖面窄、无语义理解、无自检机制等设计弊端。详见 [早期版本局限性分析](LIMITATIONS_CN.md)。
