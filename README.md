@@ -52,15 +52,20 @@ python3 python-scripts/universal_skill_generator.py \
 ### Option B: Install as a local command (recommended for daily use)
 
 ```bash
-# One-step install (ESG_NON_INTERACTIVE=1 skips interactive confirmation)
-ESG_NON_INTERACTIVE=1 ./skills/experience-to-skill-generator/install.sh
+# Interactive install (prompts you to choose CLI language)
+./skills/experience-to-skill-generator/install.sh
 
-# After installation, use the short command directly
+# Or specify language + skip interactive confirmation
+ESG_LANG=en ESG_NON_INTERACTIVE=1 ./skills/experience-to-skill-generator/install.sh
+
+# After installation, use the short command directly (help text uses the language chosen during install)
 experience-to-skill-generator --input ./sessions/session.json analyze
 experience-to-skill-generator --input ./sessions/session.json --output-dir ./generated_skills generate --name my-skill
 ```
 
 > 💡 The install script auto-detects your environment: if OpenClaw is detected, it installs as a native skill; otherwise it uses generic mode. No manual selection needed.
+>
+> 💡 During installation, you choose the CLI help text language (Chinese/English). The choice is baked into the command wrapper — no need to set environment variables afterwards. To temporarily switch: `ESG_LANG=zh experience-to-skill-generator --help`
 
 ### Session File Format
 
@@ -167,6 +172,17 @@ No standard export function. Copy conversation content from the web interface an
 | `--preserve-raw` | Preserve raw content (⚠️ may expose sensitive data) |
 | `--config` | JSON configuration file path |
 
+### Environment Variables
+
+| Variable | Description |
+| --- | --- |
+| `ESG_LANG` | CLI help text language: `zh` (Chinese) or `en` (English). Automatically baked into the command wrapper during installation |
+| `ESG_NON_INTERACTIVE` | Set to `1` to skip all interactive prompts |
+| `ESG_SKILL_DIR` | Custom skill installation directory |
+| `ESG_CONFIG_DIR` | Custom configuration directory |
+| `ESG_OUTPUT_DIR` | Custom output directory |
+| `ESG_SESSION_DIR` | Custom session directory |
+
 ### Exit Codes
 
 | Exit Code | Meaning |
@@ -180,6 +196,8 @@ No standard export function. Copy conversation content from the web interface an
 ## 7. Configuration
 
 Configuration precedence (low to high): built-in defaults → `--config` file → `ESG_*` environment variables → CLI flags.
+
+> 💡 `ESG_LANG` is written into the command wrapper at install time, effectively making it a permanent setting. To override, simply set it before running a command.
 
 > 📋 For full configuration reference, see [doc/CONFIGURATION.md](doc/CONFIGURATION.md).
 

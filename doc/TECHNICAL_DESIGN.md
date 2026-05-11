@@ -124,6 +124,7 @@ The installer generates a **thin Shell wrapper script** (not a compiled binary) 
 ```bash
 cat > "$cli_path" <<EOF
 #!/usr/bin/env bash
+export ESG_LANG="${CLI_LANG}"
 exec "$PYTHON_BIN" "$PROJECT_DIR/python-scripts/universal_skill_generator.py" "\$@"
 EOF
 chmod +x "$cli_path"
@@ -135,6 +136,7 @@ Key elements:
 | --- | --- |
 | `cat > ... <<EOF` | Shell Here Document syntax — writes multi-line text into the target file |
 | `#!/usr/bin/env bash` | Shebang line declaring the script should be executed with bash |
+| `export ESG_LANG="..."` | Bakes the language choice (selected during install) into the wrapper, so CLI help text displays in the correct language without manual env setup |
 | `exec` | **Replaces** the current shell process with the Python process, avoiding an extra parent process |
 | `"$PYTHON_BIN"` / `"$PROJECT_DIR/..."` | Expanded to absolute paths at install time and hard-coded into the script |
 | `"\$@"` | The `$` is escaped during generation; at runtime it becomes `"$@"`, forwarding all user arguments |

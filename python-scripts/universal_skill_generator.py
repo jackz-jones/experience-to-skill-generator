@@ -966,30 +966,130 @@ def command_validate_config(args: argparse.Namespace) -> int:
     return 0
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="自动分析 agent 会话并生成可复用 SKILL")
-    parser.add_argument("--config", help="配置文件路径，JSON 格式")
-    parser.add_argument("--input", help="会话文件或目录路径")
-    parser.add_argument("--output-dir", help="SKILL 输出目录")
-    parser.add_argument("--conflict", choices=["rename", "skip", "overwrite", "merge", "fail"], help="同名 SKILL 冲突处理策略")
-    parser.add_argument("--preserve-raw", action="store_true", help="保留原文内容；启用前请确认不会泄露敏感信息")
-    subparsers = parser.add_subparsers(dest="command", required=True)
+def _get_cli_lang() -> str:
+    """根据环境变量决定 CLI 帮助文本语言，支持 zh（中文）和 en（英文）。"""
+    lang = os.environ.get("ESG_LANG", "").strip().lower()
+    if lang in ("zh", "en"):
+        return lang
+    # 未显式设置时，根据系统 LANG 环境变量推断
+    sys_lang = os.environ.get("LANG", "").lower()
+    if sys_lang.startswith("zh"):
+        return "zh"
+    return "en"
 
-    analyze = subparsers.add_parser("analyze", help="读取并分析会话")
-    analyze.add_argument("--json-lines", action="store_true", help="紧凑 JSON 输出，便于脚本解析")
+
+# CLI 帮助文本国际化
+_CLI_MESSAGES: Dict[str, Dict[str, str]] = {
+    "description": {
+        "zh": "自动分析 agent 会话并生成可复用 SKILL",
+        "en": "Automatically analyze agent conversations and generate reusable SKILLs",
+    },
+    "config": {
+        "zh": "配置文件路径，JSON 格式",
+        "en": "Path to config file (JSON format)",
+    },
+    "input": {
+        "zh": "会话文件或目录路径",
+        "en": "Path to conversation file or directory",
+    },
+    "output_dir": {
+        "zh": "SKILL 输出目录",
+        "en": "Output directory for generated SKILLs",
+    },
+    "conflict": {
+        "zh": "同名 SKILL 冲突处理策略",
+        "en": "Strategy for handling SKILL name conflicts",
+    },
+    "preserve_raw": {
+        "zh": "保留原文内容；启用前请确认不会泄露敏感信息",
+        "en": "Preserve raw content; ensure no sensitive data is exposed before enabling",
+    },
+    "commands_title": {
+        "zh": "可用命令",
+        "en": "commands",
+    },
+    "analyze": {
+        "zh": "读取并分析会话",
+        "en": "Read and analyze conversations",
+    },
+    "json_lines": {
+        "zh": "紧凑 JSON 输出，便于脚本解析",
+        "en": "Compact JSON output for scripting",
+    },
+    "generate": {
+        "zh": "分析会话并写入 SKILL",
+        "en": "Analyze conversations and write SKILLs",
+    },
+    "name": {
+        "zh": "生成的 SKILL 名称",
+        "en": "Name of the generated SKILL",
+    },
+    "config_cmd": {
+        "zh": "显示合并后的配置和适配策略",
+        "en": "Show merged configuration and adapter strategy",
+    },
+    "validate_config": {
+        "zh": "校验配置文件、环境变量和 CLI 覆盖项",
+        "en": "Validate config file, environment variables and CLI overrides",
+    },
+    "diagnose": {
+        "zh": "诊断运行环境和会话来源",
+        "en": "Diagnose runtime environment and conversation sources",
+    },
+    "options_title": {
+        "zh": "选项",
+        "en": "options",
+    },
+    "help_option": {
+        "zh": "显示帮助信息并退出",
+        "en": "show this help message and exit",
+    },
+}
+
+
+def _msg(key: str) -> str:
+    """获取当前语言对应的 CLI 帮助文本。"""
+    lang = _get_cli_lang()
+    return _CLI_MESSAGES[key][lang]
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="experience-to-skill-generator",
+        description=_msg("description"),
+        add_help=False,
+    )
+    parser._optionals.title = _msg("options_title")
+    parser.add_argument("-h", "--help", action="help", default=argparse.SUPPRESS, help=_msg("help_option"))
+    parser.add_argument("--config", help=_msg("config"))
+    parser.add_argument("--input", help=_msg("input"))
+    parser.add_argument("--output-dir", help=_msg("output_dir"))
+    parser.add_argument("--conflict", choices=["rename", "skip", "overwrite", "merge", "fail"], help=_msg("conflict"))
+    parser.add_argument("--preserve-raw", action="store_true", help=_msg("preserve_raw"))
+    subparsers = parser.add_subparsers(dest="command", required=True, title=_msg("commands_title"), metavar="<command>")
+
+    def _sub(name: str, **kwargs: Any) -> argparse.ArgumentParser:
+        """创建子命令 parser，统一国际化 options 标题和 -h/--help 文本。"""
+        sp = subparsers.add_parser(name, add_help=False, **kwargs)
+        sp._optionals.title = _msg("options_title")
+        sp.add_argument("-h", "--help", action="help", default=argparse.SUPPRESS, help=_msg("help_option"))
+        return sp
+
+    analyze = _sub("analyze", help=_msg("analyze"))
+    analyze.add_argument("--json-lines", action="store_true", help=_msg("json_lines"))
     analyze.set_defaults(func=command_analyze)
 
-    generate = subparsers.add_parser("generate", help="分析会话并写入 SKILL")
-    generate.add_argument("--name", help="生成的 SKILL 名称")
+    generate = _sub("generate", help=_msg("generate"))
+    generate.add_argument("--name", help=_msg("name"))
     generate.set_defaults(func=command_generate)
 
-    config = subparsers.add_parser("config", help="显示合并后的配置和适配策略")
+    config = _sub("config", help=_msg("config_cmd"))
     config.set_defaults(func=command_config)
 
-    validate = subparsers.add_parser("validate-config", help="校验配置文件、环境变量和 CLI 覆盖项")
+    validate = _sub("validate-config", help=_msg("validate_config"))
     validate.set_defaults(func=command_validate_config)
 
-    diagnose = subparsers.add_parser("diagnose", help="诊断运行环境和会话来源")
+    diagnose = _sub("diagnose", help=_msg("diagnose"))
     diagnose.set_defaults(func=command_diagnose)
     return parser
 

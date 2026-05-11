@@ -142,6 +142,7 @@ experience-to-skill-generator --config ./config.json ...
 | `PYTHON_BIN` | 指定 Python 可执行文件，默认 `python3` |
 | `ESG_INSTALL_MODE` | `auto` 或 `copy-only` |
 | `ESG_NON_INTERACTIVE` | `1` 或 `true` 时跳过确认 |
+| `ESG_LANG` | CLI 帮助文本语言：`zh`（中文）或 `en`（英文）。交互安装时会提示选择；非交互模式下根据系统 `LANG` 自动检测。选择结果写入命令入口脚本，后续使用无需再设置 |
 | `ESG_BIN_DIR` | 命令入口目录，默认 `$HOME/.local/bin` |
 | `ESG_EXAMPLES_DIR` | 示例会话目录 |
 | `ESG_PROJECT_DIR` | CLI 源码所在项目目录 |

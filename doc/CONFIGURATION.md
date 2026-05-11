@@ -142,6 +142,7 @@ Environment variables override both the default config and the JSON config file.
 | `PYTHON_BIN` | Python executable, defaults to `python3` |
 | `ESG_INSTALL_MODE` | `auto` or `copy-only` |
 | `ESG_NON_INTERACTIVE` | Set to `1` or `true` to skip confirmation |
+| `ESG_LANG` | CLI help text language: `zh` (Chinese) or `en` (English). During interactive install, the user is prompted to choose; in non-interactive mode, auto-detected from system `LANG`. The chosen value is baked into the command wrapper script |
 | `ESG_BIN_DIR` | Command entry directory, defaults to `$HOME/.local/bin` |
 | `ESG_EXAMPLES_DIR` | Sample session directory |
 | `ESG_PROJECT_DIR` | CLI source project directory |

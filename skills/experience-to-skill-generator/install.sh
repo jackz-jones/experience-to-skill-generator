@@ -22,6 +22,7 @@ EXAMPLES_DIR="${ESG_EXAMPLES_DIR:-$HOME/.experience-to-skill-generator/examples}
 PROJECT_DIR="${ESG_PROJECT_DIR:-$REPO_DIR}"
 OPENCLAW_AVAILABLE=0
 INSTALL_STRATEGY="generic"
+CLI_LANG="${ESG_LANG:-}"
 
 log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
 log_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
@@ -55,6 +56,47 @@ confirm_install() {
     fi
     read -r -p "是否继续安装？(y/N): " reply
     [[ "$reply" =~ ^[Yy]$ ]] || { log_info "安装已取消"; exit 0; }
+}
+
+detect_cli_lang() {
+    # 如果已通过 ESG_LANG 环境变量显式指定，直接使用
+    if [ -n "$CLI_LANG" ]; then
+        log_info "使用指定语言: $CLI_LANG"
+        return 0
+    fi
+
+    # 非交互模式下自动检测
+    if [ "$NON_INTERACTIVE" = "1" ] || [ "$NON_INTERACTIVE" = "true" ]; then
+        local sys_lang="${LANG:-en_US.UTF-8}"
+        if [[ "$sys_lang" == zh* ]]; then
+            CLI_LANG="zh"
+        else
+            CLI_LANG="en"
+        fi
+        log_info "自动检测 CLI 语言: $CLI_LANG"
+        return 0
+    fi
+
+    # 交互模式下让用户选择
+    echo ""
+    echo "请选择 CLI 帮助文本语言 / Select CLI language:"
+    echo "  1) 中文 (Chinese)"
+    echo "  2) English"
+    echo ""
+    read -r -p "请输入 [1/2] (默认根据系统语言自动选择): " lang_choice
+    case "$lang_choice" in
+        1) CLI_LANG="zh" ;;
+        2) CLI_LANG="en" ;;
+        *)
+            local sys_lang="${LANG:-en_US.UTF-8}"
+            if [[ "$sys_lang" == zh* ]]; then
+                CLI_LANG="zh"
+            else
+                CLI_LANG="en"
+            fi
+            ;;
+    esac
+    log_info "CLI 语言设置为: $CLI_LANG"
 }
 
 check_python() {
@@ -151,6 +193,7 @@ install_files() {
     local cli_path="$TARGET_BIN_DIR/experience-to-skill-generator"
     cat > "$cli_path" <<EOF
 #!/usr/bin/env bash
+export ESG_LANG="${CLI_LANG}"
 exec "$PYTHON_BIN" "$PROJECT_DIR/python-scripts/universal_skill_generator.py" "\$@"
 EOF
     chmod +x "$cli_path"
@@ -218,6 +261,7 @@ show_usage() {
     echo "  experience-to-skill-generator config"
     echo ""
     echo "常用环境变量:"
+    echo "  ESG_LANG=zh|en          # 切换 CLI 语言（覆盖安装时的选择）"
     echo "  ESG_SKILL_DIR=/custom/skills/experience-to-skill-generator"
     echo "  ESG_CONFIG_DIR=/custom/config"
     echo "  ESG_OUTPUT_DIR=/custom/generated_skills"
@@ -239,6 +283,7 @@ main() {
     echo ""
 
     confirm_install
+    detect_cli_lang
     check_python
     check_optional_dependencies
     detect_agent_environment

@@ -124,6 +124,7 @@ flowchart TD
 ```bash
 cat > "$cli_path" <<EOF
 #!/usr/bin/env bash
+export ESG_LANG="${CLI_LANG}"
 exec "$PYTHON_BIN" "$PROJECT_DIR/python-scripts/universal_skill_generator.py" "\$@"
 EOF
 chmod +x "$cli_path"
@@ -135,6 +136,7 @@ chmod +x "$cli_path"
 | --- | --- |
 | `cat > ... <<EOF` | Shell Here Document 语法，将多行文本写入目标文件 |
 | `#!/usr/bin/env bash` | Shebang，声明用 bash 执行该脚本 |
+| `export ESG_LANG="..."` | 将安装时选择的语言写入脚本，CLI 帮助文本自动按此语言显示，用户无需手动设置环境变量 |
 | `exec` | 用 Python 进程**替换**当前 Shell 进程，避免多余的父进程开销 |
 | `"$PYTHON_BIN"` / `"$PROJECT_DIR/..."` | 安装时展开为实际绝对路径，写死到脚本中 |
 | `"\$@"` | `$` 被转义，写入后变成 `"$@"`，运行时透传所有用户参数 |
