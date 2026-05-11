@@ -2,13 +2,15 @@
 
 > [中文](LIMITATIONS_CN.md)
 
-This document records the design flaws and limitations of the early version (pure rule engine) of `Experience-to-Skill Generator`, serving as a cautionary reference for future iterations.
+This document records the design flaws and limitations of the early version (v0.1.x, pure rule engine) of `Experience-to-Skill Generator`, serving as a cautionary reference for future iterations.
+
+> ✅ **The current version (v0.2.0) has resolved most of the issues described below**: through the full `extract` + agent LLM analysis + `generate --analysis` workflow, semantic analysis is delegated to the agent's LLM, and the tool only acts as a data pipeline. The built-in rule engine is retained as a fallback.
 
 ---
 
 ## 1. Core Issue: No AI Reasoning Capability
 
-The entire analysis pipeline in `universal_skill_generator.py` is **100% hard-coded rules** with zero LLM / AI model integration.
+The early version's entire analysis pipeline in `universal_skill_generator.py` was **100% hard-coded rules** with zero LLM / AI model integration.
 
 **Evidence:**
 
@@ -132,7 +134,9 @@ Input session → Regex extraction → Template filling → Output SKILL.md (don
 
 ## 5. Improvement Directions
 
-### 5.1 Integrate LLM for Semantic Analysis
+> ✅ The following improvement directions have been implemented in v0.2.0. The current version supports the full `extract` + agent LLM analysis + `generate --analysis` workflow, with the built-in rule engine retained as a fallback.
+
+### 5.1 Integrate LLM for Semantic Analysis ✅ Implemented
 
 Replace hard-coded regex with AI models for true semantic understanding:
 
@@ -140,7 +144,7 @@ Replace hard-coded regex with AI models for true semantic understanding:
 Conversation text → LLM analysis (understand intent / extract tasks / identify steps / discover constraints) → Structured output
 ```
 
-### 5.2 Introduce ReAct Self-Verification Loop
+### 5.2 Introduce ReAct Self-Verification Loop ✅ Implemented
 
 Let AI self-check after generation, iterating until satisfied:
 
@@ -148,17 +152,17 @@ Let AI self-check after generation, iterating until satisfied:
 Generate SKILL draft → AI self-check (accurately covers key points?) → Unsatisfied → Adjust and regenerate → Satisfied → Output
 ```
 
-### 5.3 Incremental Analysis Capability
+### 5.3 Incremental Analysis Capability ⚠️ Pending
 
 - Track hashes of previously analyzed session files.
 - Only perform incremental analysis on new/changed sessions.
 - Support intelligent merging of new analysis results into existing skills.
 
-### 5.4 Multi-Language Support
+### 5.4 Multi-Language Support ✅ Implemented
 
-- Extraction rules should not hard-code language-specific keywords.
-- Let LLM automatically adapt to input language.
-- Make output language configurable.
+- Extraction rules should not hard-code language-specific keywords. → Solved via LLM analysis mode; LLM automatically adapts to input language.
+- Let LLM automatically adapt to input language. → Implemented.
+- Make output language configurable. → Implemented via `ESG_LANG` environment variable supporting Chinese/English switching.
 
 ---
 
@@ -168,4 +172,4 @@ The core lesson from the early version:
 
 > **Do not use hard-coded rules for tasks that require semantic understanding.** Regular expressions can handle "format" but not "meaning". When the input is natural language, hard-coded rules will always have limited coverage, and maintenance cost grows exponentially with the number of rules.
 
-This version served as an MVP to validate the "conversation → skill" pathway, but to be truly practical, AI reasoning capabilities must be introduced.
+This version served as an MVP to validate the "conversation → skill" pathway. The current version (v0.2.0) has introduced agent LLM semantic analysis + ReAct self-check loop, with the built-in rule engine retained as a fallback.

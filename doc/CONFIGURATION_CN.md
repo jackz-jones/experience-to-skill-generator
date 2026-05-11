@@ -167,11 +167,18 @@ CLI 参数优先级最高，会覆盖所有其他配置来源。
 
 | 子命令 | 参数 | 说明 |
 | --- | --- | --- |
+| `extract` | `--max-chunks` | 最大分段数量（0 表示不限制） |
 | `analyze` | `--json-lines` | 输出紧凑 JSON，便于脚本解析 |
 | `generate` | `--name` | 指定生成的技能名称 |
+| `generate` | `--analysis` | 外部 LLM 分析结果 JSON（包含 tasks/key_steps/constraints/keywords/confidence 字段） |
+| `generate` | `--analysis-stdin` | 从 stdin 读取外部 LLM 分析结果 JSON |
 | `config` | 无 | 输出合并配置和适配信息 |
 | `validate-config` | 无 | 校验配置并输出结果 |
 | `diagnose` | 无 | 诊断运行环境和会话来源 |
+| `setup-agent` | `agent_type` | 目标 agent 类型（必填）：`claude-code` / `cursor` / `windsurf` |
+| `setup-agent` | `--output` | 输出目录（默认当前目录） |
+| `setup-agent` | `--force` | 覆盖已存在的指引文件 |
+| `setup-agent` | `--dry-run` | 仅预览生成内容，不写入文件 |
 
 ---
 

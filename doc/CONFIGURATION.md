@@ -167,11 +167,18 @@ CLI flags have the highest precedence and override all other configuration sourc
 
 | Subcommand | Flag | Description |
 | --- | --- | --- |
+| `extract` | `--max-chunks` | Maximum number of chunks (0 for unlimited) |
 | `analyze` | `--json-lines` | Outputs compact JSON for script parsing |
 | `generate` | `--name` | Specifies the skill name to generate |
+| `generate` | `--analysis` | External LLM analysis result JSON (with tasks/key_steps/constraints/keywords/confidence fields) |
+| `generate` | `--analysis-stdin` | Read external LLM analysis result JSON from stdin |
 | `config` | none | Prints merged config and adapter info |
 | `validate-config` | none | Validates config and prints result |
 | `diagnose` | none | Diagnoses runtime environment and session sources |
+| `setup-agent` | `agent_type` | Target agent type (required): `claude-code` / `cursor` / `windsurf` |
+| `setup-agent` | `--output` | Output directory (defaults to current directory) |
+| `setup-agent` | `--force` | Overwrite existing guide files |
+| `setup-agent` | `--dry-run` | Preview generated content without writing files |
 
 ---
 

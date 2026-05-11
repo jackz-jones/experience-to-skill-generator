@@ -224,7 +224,8 @@ E2E validation covers:
 
 - `generic` agent flow.
 - `openclaw` agent flow.
-- `diagnose`, `analyze`, `generate` commands.
+- `extract`, `analyze`, `generate`, `diagnose` commands.
+- `setup-agent` command (covering `claude-code`, `cursor`, `windsurf` agent types).
 - Required sections and metadata in generated documents.
 
 ### 9. Module layout
@@ -233,7 +234,7 @@ E2E validation covers:
 
 | File | Role |
 | --- | --- |
-| `universal_skill_generator.py` | Main CLI entry; implements all 6 subcommands (`extract` / `analyze` / `generate` / `diagnose` / `config` / `validate-config`), config merging, adapter detection, session preprocessing, rule-based analysis, external analysis reception, template rendering, and atomic writes |
+| `universal_skill_generator.py` | Main CLI entry; implements all 7 subcommands (`extract` / `analyze` / `generate` / `diagnose` / `config` / `validate-config` / `setup-agent`), config merging, adapter detection, session preprocessing, rule-based analysis, external analysis reception, template rendering, atomic writes, and agent workflow guide generation |
 | `test_universal_skill_generator.py` | Unit tests for the main CLI |
 | `e2e_validate_universal_skill_generator.py` | End-to-end validation covering both `generic` and `openclaw` adapter flows |
 

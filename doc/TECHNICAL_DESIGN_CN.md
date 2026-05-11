@@ -224,7 +224,8 @@ exec "/usr/bin/python3" "/home/user/experience-to-skill-generator/python-scripts
 
 - `generic` agent 流程。
 - `openclaw` agent 流程。
-- `diagnose`、`analyze`、`generate` 命令。
+- `extract`、`analyze`、`generate`、`diagnose` 命令。
+- `setup-agent` 命令（含 `claude-code`、`cursor`、`windsurf` 三种 agent 类型）。
 - 生成文档必要章节与 metadata。
 
 ### 9. 代码模块布局
@@ -233,7 +234,7 @@ exec "/usr/bin/python3" "/home/user/experience-to-skill-generator/python-scripts
 
 | 文件 | 职责 |
 | --- | --- |
-| `universal_skill_generator.py` | 主 CLI 入口；实现全部 6 个子命令（`extract` / `analyze` / `generate` / `diagnose` / `config` / `validate-config`）、配置合并、adapter 检测、会话预处理、规则分析、外部分析接收、模板渲染与原子写入 |
+| `universal_skill_generator.py` | 主 CLI 入口；实现全部 7 个子命令（`extract` / `analyze` / `generate` / `diagnose` / `config` / `validate-config` / `setup-agent`）、配置合并、adapter 检测、会话预处理、规则分析、外部分析接收、模板渲染、原子写入与 agent 工作流指引生成 |
 | `test_universal_skill_generator.py` | 主 CLI 单元测试 |
 | `e2e_validate_universal_skill_generator.py` | 覆盖 `generic` 与 `openclaw` 两种 adapter 流程的端到端验证 |
 
