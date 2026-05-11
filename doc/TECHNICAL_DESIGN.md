@@ -117,6 +117,42 @@ Conflict strategies:
 - Creating sample session data.
 - Cleaning up temporary files on install failure.
 
+#### 7.1 Command entry script internals
+
+The installer generates a **thin Shell wrapper script** (not a compiled binary) as the CLI command entry point using Here Document syntax:
+
+```bash
+cat > "$cli_path" <<EOF
+#!/usr/bin/env bash
+exec "$PYTHON_BIN" "$PROJECT_DIR/python-scripts/universal_skill_generator.py" "\$@"
+EOF
+chmod +x "$cli_path"
+```
+
+Key elements:
+
+| Element | Explanation |
+| --- | --- |
+| `cat > ... <<EOF` | Shell Here Document syntax — writes multi-line text into the target file |
+| `#!/usr/bin/env bash` | Shebang line declaring the script should be executed with bash |
+| `exec` | **Replaces** the current shell process with the Python process, avoiding an extra parent process |
+| `"$PYTHON_BIN"` / `"$PROJECT_DIR/..."` | Expanded to absolute paths at install time and hard-coded into the script |
+| `"\$@"` | The `$` is escaped during generation; at runtime it becomes `"$@"`, forwarding all user arguments |
+| `chmod +x` | Grants execute permission |
+
+Example of the generated file:
+
+```bash
+#!/usr/bin/env bash
+exec "/usr/bin/python3" "/home/user/experience-to-skill-generator/python-scripts/universal_skill_generator.py" "$@"
+```
+
+Characteristics of this approach:
+
+- **Not** a compiled/packaged binary (unlike PyInstaller or similar tools) — no build step required.
+- **Is** a thin shell script acting as a "shortcut" — changes to the `.py` source take effect immediately.
+- Depends on a Python interpreter already installed on the system.
+
 ### 8. Validation strategy
 
 - **Unit tests**: `python3 -m unittest python-scripts/test_universal_skill_generator.py`

@@ -117,6 +117,42 @@ flowchart TD
 - 创建示例会话数据。
 - 安装失败时清理本次创建的临时文件。
 
+#### 7.1 命令入口脚本原理
+
+安装脚本通过 Here Document 语法生成一个 **Shell 包装脚本**（非二进制编译），作为 CLI 命令入口：
+
+```bash
+cat > "$cli_path" <<EOF
+#!/usr/bin/env bash
+exec "$PYTHON_BIN" "$PROJECT_DIR/python-scripts/universal_skill_generator.py" "\$@"
+EOF
+chmod +x "$cli_path"
+```
+
+核心要点：
+
+| 要素 | 说明 |
+| --- | --- |
+| `cat > ... <<EOF` | Shell Here Document 语法，将多行文本写入目标文件 |
+| `#!/usr/bin/env bash` | Shebang，声明用 bash 执行该脚本 |
+| `exec` | 用 Python 进程**替换**当前 Shell 进程，避免多余的父进程开销 |
+| `"$PYTHON_BIN"` / `"$PROJECT_DIR/..."` | 安装时展开为实际绝对路径，写死到脚本中 |
+| `"\$@"` | `$` 被转义，写入后变成 `"$@"`，运行时透传所有用户参数 |
+| `chmod +x` | 赋予可执行权限 |
+
+最终生成的文件内容示例：
+
+```bash
+#!/usr/bin/env bash
+exec "/usr/bin/python3" "/home/user/experience-to-skill-generator/python-scripts/universal_skill_generator.py" "$@"
+```
+
+这种方式的特点：
+
+- **不是**编译打包（区别于 PyInstaller 等工具），无需编译步骤。
+- **是**一个薄 Shell 脚本充当"快捷方式"，修改 `.py` 源码后立即生效。
+- 运行时依赖系统已安装的 Python 解释器。
+
 ### 8. 验证策略
 
 - **单元测试**：`python3 -m unittest python-scripts/test_universal_skill_generator.py`
