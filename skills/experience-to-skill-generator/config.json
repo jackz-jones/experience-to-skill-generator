@@ -18,6 +18,33 @@
 
   "tools": [
     {
+      "name": "extract",
+      "description": "预处理会话文件：读取、脱敏、归一化、分段，输出结构化文本供 LLM 分析（不做语义分析）",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session_path": {
+            "type": "string",
+            "description": "会话文件或目录路径"
+          },
+          "config_path": {
+            "type": "string",
+            "description": "可选：自定义配置文件（JSON）路径"
+          },
+          "max_chunks": {
+            "type": "integer",
+            "description": "最大分段数量（0 表示不限制）",
+            "default": 0
+          }
+        },
+        "required": ["session_path"]
+      },
+      "command": {
+        "type": "exec",
+        "script": "python3 python-scripts/universal_skill_generator.py ${config_path:+--config '${config_path}'} --input '${session_path}' extract ${max_chunks:+--max-chunks ${max_chunks}}"
+      }
+    },
+    {
       "name": "analyze",
       "description": "读取并分析会话，输出结构化的分析结果（不写入 SKILL 文件）",
       "parameters": {
@@ -46,7 +73,7 @@
     },
     {
       "name": "generate",
-      "description": "分析会话并写入 SKILL 文件到输出目录",
+      "description": "生成 SKILL 文件。可通过 analysis_json 传入 LLM 分析结果，或省略则使用内置规则引擎",
       "parameters": {
         "type": "object",
         "properties": {
@@ -67,6 +94,10 @@
             "type": "string",
             "description": "可选：指定生成的 SKILL 名称"
           },
+          "analysis_json": {
+            "type": "string",
+            "description": "可选：LLM 分析结果 JSON（包含 tasks/key_steps/constraints/keywords/confidence 字段）。传入则跳过内置规则引擎"
+          },
           "config_path": {
             "type": "string",
             "description": "可选：自定义配置文件（JSON）路径"
@@ -81,7 +112,7 @@
       },
       "command": {
         "type": "exec",
-        "script": "python3 python-scripts/universal_skill_generator.py ${config_path:+--config '${config_path}'} --input '${session_path}' ${output_dir:+--output-dir '${output_dir}'} ${conflict_strategy:+--conflict ${conflict_strategy}} ${preserve_raw:+--preserve-raw} generate ${skill_name:+--name '${skill_name}'}"
+        "script": "python3 python-scripts/universal_skill_generator.py ${config_path:+--config '${config_path}'} --input '${session_path}' ${output_dir:+--output-dir '${output_dir}'} ${conflict_strategy:+--conflict ${conflict_strategy}} ${preserve_raw:+--preserve-raw} generate ${skill_name:+--name '${skill_name}'} ${analysis_json:+--analysis '${analysis_json}'}"
       }
     },
     {
@@ -145,6 +176,39 @@
       "command": {
         "type": "exec",
         "script": "python3 python-scripts/universal_skill_generator.py ${config_path:+--config '${config_path}'} validate-config"
+      }
+    },
+    {
+      "name": "setup-agent",
+      "description": "为指定 agent 生成项目级工作流指引文件（如 CLAUDE.md、.cursorrules），让 agent 自动学会 extract → LLM 分析 → generate 的完整流程",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agent_type": {
+            "type": "string",
+            "description": "目标 agent 类型",
+            "enum": ["claude-code", "cursor", "windsurf"]
+          },
+          "output": {
+            "type": "string",
+            "description": "可选：输出目录（默认当前目录）"
+          },
+          "force": {
+            "type": "boolean",
+            "description": "覆盖已存在的指引文件",
+            "default": false
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "仅预览生成内容，不写入文件",
+            "default": false
+          }
+        },
+        "required": ["agent_type"]
+      },
+      "command": {
+        "type": "exec",
+        "script": "python3 python-scripts/universal_skill_generator.py setup-agent ${agent_type} ${output:+--output '${output}'} ${force:+--force} ${dry_run:+--dry-run}"
       }
     }
   ],

@@ -14,9 +14,42 @@
 
 ### 2. Data flow
 
+The tool uses a "data pipeline" architecture where semantic analysis is delegated to the agent's own LLM:
+
 ```mermaid
 flowchart TD
-    A[CLI / Installer] --> B[Build Runtime Context]
+    subgraph "Tool (deterministic operations)"
+        A["CLI / Installer"] --> B["Build Runtime Context"]
+        B --> C["Load and Validate Config"]
+        C --> D["Detect Agent Adapter"]
+        D --> E["Load Session Files"]
+        E --> F["Normalize and Redact Messages"]
+        F --> G["Chunk and Output Structured Text (extract)"]
+        I["Receive Analysis JSON"] --> J["Render SKILL Template"]
+        J --> K["Detect Existing or Similar Skill"]
+        K --> L["Apply Conflict Strategy"]
+        L --> M["Atomic Write SKILL.md"]
+    end
+
+    subgraph "Agent LLM (semantic understanding)"
+        G -->|"stdout"| H["Agent LLM reads session text"]
+        H --> H2["Understand intent / Extract tasks / Identify steps"]
+        H2 --> H3["Output structured analysis JSON"]
+        H3 -->|"--analysis flag"| I
+        M -->|"stdout"| N["Agent LLM self-checks quality"]
+        N --> O{"Satisfied?"}
+        O -->|"No"| H
+        O -->|"Yes"| P["Done"]
+    end
+```
+
+### 2.1 Fallback data flow (no LLM dependency)
+
+When the tool is used standalone or the agent doesn't support multi-step calls, the built-in rule engine can be used directly:
+
+```mermaid
+flowchart TD
+    A[CLI] --> B[Build Runtime Context]
     B --> C[Load and Validate Config]
     C --> D[Detect Agent Adapter]
     D --> E[Load Session Files]
@@ -57,7 +90,33 @@ Custom adapters can be added via the `adapters` config:
 
 ### 4. Session analysis strategy
 
-The current implementation uses lightweight rule-based analysis without external models:
+#### 4.1 Recommended mode: Agent LLM-driven
+
+The tool uses a "data pipeline" architecture where semantic analysis is delegated to the agent's own LLM:
+
+| Capability | Responsible | Reason |
+| --- | --- | --- |
+| Session file reading, parsing, normalization | **Tool** | I/O operations, not the agent's strength |
+| Semantic analysis (understanding intent, extracting tasks) | **Agent's LLM** | The agent already has this capability |
+| Structured output (generating SKILL.md) | **Tool** | Template rendering and file writing are deterministic |
+| Self-check loop (ReAct) | **Agent itself** | Agents are naturally ReAct architectures |
+
+Workflow:
+
+1. Agent calls `extract` to get preprocessed session text
+2. Agent's LLM analyzes the content based on the returned `prompt_hint`
+3. Agent passes the analysis result (JSON) to `generate --analysis`
+4. Agent checks the generated SKILL.md quality; if unsatisfied, adjusts and regenerates
+
+Advantages of this design:
+- **Zero configuration**: No need to configure LLM API keys in the tool; reuses the agent's LLM
+- **No extra dependencies**: Tool remains pure standard library implementation
+- **Single token consumption**: Avoids double consumption from tool calling LLM + agent calling LLM
+- **Natural self-check loop**: Agents are inherently ReAct architectures
+
+#### 4.2 Fallback mode: Built-in rule engine
+
+When the tool is used standalone or the agent doesn't support multi-step calls, `generate` without `--analysis` uses the built-in rule engine:
 
 - Extracts task sentences from user messages using markers like "please, need, help me, implement, fix, analyze, generate".
 - Extracts numbered lists, bullet points, and step-like sentences from assistant messages.
@@ -174,10 +233,10 @@ E2E validation covers:
 
 | File | Role |
 | --- | --- |
-| `universal_skill_generator.py` | Main CLI entry; implements all 5 subcommands (`analyze` / `generate` / `diagnose` / `config` / `validate-config`), config merging, adapter detection, session analysis, template rendering, and atomic writes |
+| `universal_skill_generator.py` | Main CLI entry; implements all 6 subcommands (`extract` / `analyze` / `generate` / `diagnose` / `config` / `validate-config`), config merging, adapter detection, session preprocessing, rule-based analysis, external analysis reception, template rendering, and atomic writes |
 | `test_universal_skill_generator.py` | Unit tests for the main CLI |
 | `e2e_validate_universal_skill_generator.py` | End-to-end validation covering both `generic` and `openclaw` adapter flows |
 
 ### 10. Known Limitations
 
-The current version uses a pure rule engine for session analysis, with known flaws including narrow coverage, no semantic understanding, and no self-verification mechanism. See [Early Version Limitations Analysis](LIMITATIONS.md) for details.
+The built-in rule engine serves as a fallback and has known flaws including narrow coverage, no semantic understanding, and no self-verification mechanism. The recommended approach is to use the full `extract` + agent LLM analysis + `generate --analysis` workflow. See [Early Version Limitations Analysis](LIMITATIONS.md) for details.

@@ -167,6 +167,224 @@ class UniversalSkillGeneratorTest(unittest.TestCase):
             exit_code = usg.main(["--input", str(missing), "analyze", "--json-lines"])
             self.assertEqual(exit_code, 2)
 
+    def test_command_extract_outputs_structured_chunks(self):
+        """extract 命令应输出预处理后的分段会话文本和 prompt_hint。"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self.write_session(tmpdir, [
+                {"role": "user", "content": "请实现一个通用安装脚本"},
+                {"role": "assistant", "content": "1. 检查依赖\n2. 识别环境\n3. 生成 SKILL"},
+            ])
+            import io
+            from contextlib import redirect_stdout
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                exit_code = usg.main(["--input", str(Path(tmpdir) / "session.json"), "extract"])
+            self.assertEqual(exit_code, 0)
+            payload = json.loads(buf.getvalue())
+            self.assertIn("chunks", payload)
+            self.assertIn("prompt_hint", payload)
+            self.assertGreater(payload["total_messages"], 0)
+            self.assertGreater(len(payload["chunks"]), 0)
+            # 每个 chunk 应包含 messages
+            for chunk in payload["chunks"]:
+                self.assertIn("chunk_id", chunk)
+                self.assertIn("messages", chunk)
+                self.assertGreater(len(chunk["messages"]), 0)
+
+    def test_parse_external_analysis_valid(self):
+        """_parse_external_analysis 应正确解析合法的外部分析 JSON。"""
+        raw = json.dumps({
+            "tasks": ["开发监控 API"],
+            "key_steps": ["定义接口", "实现适配器"],
+            "constraints": ["支持多链"],
+            "keywords": ["blockchain", "API"],
+            "confidence": 0.9,
+        })
+        result = usg._parse_external_analysis(raw)
+        self.assertEqual(result["tasks"], ["开发监控 API"])
+        self.assertEqual(result["confidence"], 0.9)
+        self.assertFalse(result["requires_review"])
+        self.assertEqual(result["summary"]["analysis_mode"], "external_llm")
+
+    def test_parse_external_analysis_rejects_missing_fields(self):
+        """_parse_external_analysis 应拒绝缺少必要字段的 JSON。"""
+        raw = json.dumps({"keywords": ["test"]})
+        with self.assertRaises(usg.UserFacingError):
+            usg._parse_external_analysis(raw)
+
+    def test_parse_external_analysis_rejects_invalid_json(self):
+        """_parse_external_analysis 应拒绝无效 JSON。"""
+        with self.assertRaises(usg.UserFacingError):
+            usg._parse_external_analysis("not json")
+
+    def test_generate_with_external_analysis(self):
+        """generate --analysis 应使用外部分析结果生成 SKILL。"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self.write_session(tmpdir, [
+                {"role": "user", "content": "请实现区块链监控"},
+                {"role": "assistant", "content": "1. 定义接口\n2. 实现适配器"},
+            ])
+            analysis_json = json.dumps({
+                "tasks": ["开发区块链监控 API"],
+                "key_steps": ["定义 REST 接口", "抽象适配器", "添加测试"],
+                "constraints": ["支持多链扩展"],
+                "keywords": ["blockchain", "API"],
+                "confidence": 0.88,
+            })
+            import io
+            from contextlib import redirect_stdout
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                exit_code = usg.main([
+                    "--input", str(Path(tmpdir) / "session.json"),
+                    "--output-dir", str(Path(tmpdir) / "skills"),
+                    "generate",
+                    "--name", "blockchain-monitor",
+                    "--analysis", analysis_json,
+                ])
+            self.assertEqual(exit_code, 0)
+            payload = json.loads(buf.getvalue())
+            self.assertEqual(payload["analysis_mode"], "external_llm")
+            self.assertEqual(payload["confidence"], 0.88)
+            # 验证生成的 SKILL 文件包含外部分析的内容
+            skill_path = Path(payload["write_result"]["path"])
+            content = skill_path.read_text(encoding="utf-8")
+            self.assertIn("定义 REST 接口", content)
+            self.assertIn("支持多链扩展", content)
+
+    def test_generate_without_analysis_uses_builtin_rules(self):
+        """generate 不传 --analysis 时应使用内置规则引擎。"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self.write_session(tmpdir, [
+                {"role": "user", "content": "请帮我实现一个通用安装脚本"},
+                {"role": "assistant", "content": "1. 检查依赖\n2. 识别环境\n3. 生成 SKILL"},
+            ])
+            import io
+            from contextlib import redirect_stdout
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                exit_code = usg.main([
+                    "--input", str(Path(tmpdir) / "session.json"),
+                    "--output-dir", str(Path(tmpdir) / "skills"),
+                    "generate",
+                    "--name", "install-flow",
+                ])
+            self.assertEqual(exit_code, 0)
+            payload = json.loads(buf.getvalue())
+            self.assertEqual(payload["analysis_mode"], "builtin_rules")
+
+    def test_setup_agent_creates_claude_md(self):
+        """setup-agent claude-code 应在指定目录生成 CLAUDE.md。"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            import io
+            from contextlib import redirect_stdout, redirect_stderr
+            buf = io.StringIO()
+            err_buf = io.StringIO()
+            with redirect_stdout(buf), redirect_stderr(err_buf):
+                exit_code = usg.main(["setup-agent", "claude-code", "--output", tmpdir])
+            self.assertEqual(exit_code, 0)
+            payload = json.loads(buf.getvalue())
+            self.assertEqual(payload["action"], "created")
+            self.assertEqual(payload["filename"], "CLAUDE.md")
+            # 验证文件已创建且包含工作流指引
+            target = Path(payload["target_path"])
+            self.assertTrue(target.exists())
+            content = target.read_text(encoding="utf-8")
+            self.assertIn("Experience-to-Skill Generator", content)
+            self.assertIn("extract", content)
+            self.assertIn("generate", content)
+
+    def test_setup_agent_creates_cursorrules(self):
+        """setup-agent cursor 应生成 .cursorrules 文件。"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            import io
+            from contextlib import redirect_stdout, redirect_stderr
+            buf = io.StringIO()
+            err_buf = io.StringIO()
+            with redirect_stdout(buf), redirect_stderr(err_buf):
+                exit_code = usg.main(["setup-agent", "cursor", "--output", tmpdir])
+            self.assertEqual(exit_code, 0)
+            payload = json.loads(buf.getvalue())
+            self.assertEqual(payload["filename"], ".cursorrules")
+            target = Path(payload["target_path"])
+            self.assertTrue(target.exists())
+
+    def test_setup_agent_skips_existing_guide(self):
+        """setup-agent 应跳过已包含指引的文件。"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            import io
+            from contextlib import redirect_stdout, redirect_stderr
+            # 先创建一次
+            buf = io.StringIO()
+            err_buf = io.StringIO()
+            with redirect_stdout(buf), redirect_stderr(err_buf):
+                usg.main(["setup-agent", "claude-code", "--output", tmpdir])
+            # 再次运行应跳过
+            buf2 = io.StringIO()
+            err_buf2 = io.StringIO()
+            with redirect_stdout(buf2), redirect_stderr(err_buf2):
+                exit_code = usg.main(["setup-agent", "claude-code", "--output", tmpdir])
+            self.assertEqual(exit_code, 0)
+            payload = json.loads(buf2.getvalue())
+            self.assertEqual(payload["action"], "skipped")
+
+    def test_setup_agent_force_overwrites(self):
+        """setup-agent --force 应覆盖已存在的文件。"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            import io
+            from contextlib import redirect_stdout, redirect_stderr
+            # 先创建一次
+            buf = io.StringIO()
+            err_buf = io.StringIO()
+            with redirect_stdout(buf), redirect_stderr(err_buf):
+                usg.main(["setup-agent", "claude-code", "--output", tmpdir])
+            # 使用 --force 覆盖
+            buf2 = io.StringIO()
+            err_buf2 = io.StringIO()
+            with redirect_stdout(buf2), redirect_stderr(err_buf2):
+                exit_code = usg.main(["setup-agent", "claude-code", "--output", tmpdir, "--force"])
+            self.assertEqual(exit_code, 0)
+            payload = json.loads(buf2.getvalue())
+            self.assertEqual(payload["action"], "overwritten")
+
+    def test_setup_agent_dry_run(self):
+        """setup-agent --dry-run 应输出内容但不写入文件。"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            import io
+            from contextlib import redirect_stdout
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                exit_code = usg.main(["setup-agent", "windsurf", "--output", tmpdir, "--dry-run"])
+            self.assertEqual(exit_code, 0)
+            payload = json.loads(buf.getvalue())
+            self.assertTrue(payload["dry_run"])
+            self.assertIn("content", payload)
+            self.assertIn("Experience-to-Skill Generator", payload["content"])
+            # 文件不应被创建
+            target = Path(tmpdir) / ".windsurfrules"
+            self.assertFalse(target.exists())
+
+    def test_setup_agent_appends_to_existing_file(self):
+        """setup-agent 应追加到已存在但不包含指引的文件。"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            import io
+            from contextlib import redirect_stdout, redirect_stderr
+            # 先创建一个不包含指引的 CLAUDE.md
+            target = Path(tmpdir) / "CLAUDE.md"
+            target.write_text("# My Project Rules\n\nSome existing rules.\n", encoding="utf-8")
+            # 运行 setup-agent
+            buf = io.StringIO()
+            err_buf = io.StringIO()
+            with redirect_stdout(buf), redirect_stderr(err_buf):
+                exit_code = usg.main(["setup-agent", "claude-code", "--output", tmpdir])
+            self.assertEqual(exit_code, 0)
+            payload = json.loads(buf.getvalue())
+            self.assertEqual(payload["action"], "appended")
+            # 验证原内容保留且新内容追加
+            content = target.read_text(encoding="utf-8")
+            self.assertIn("My Project Rules", content)
+            self.assertIn("Experience-to-Skill Generator", content)
+
 
 if __name__ == "__main__":
     unittest.main()

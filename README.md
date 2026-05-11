@@ -8,6 +8,8 @@ Turn your AI conversation logs into reusable skill documents — with a single c
 
 Experience-to-Skill Generator is a CLI tool that **automatically analyzes your AI conversation history**, extracts valuable workflows, technical solutions, and best practices, then generates a structured `SKILL.md` skill document.
 
+**Core design philosophy**: The tool acts as a "data pipeline" (read → preprocess → template rendering → write). Semantic analysis is delegated to the agent's own LLM. No extra LLM API Key configuration needed.
+
 The generated `SKILL.md` can be used by AI agents as a skill. OpenClaw loads it automatically; other agents (Claude Code, Cursor, etc.) require manual integration (paste at conversation start, write into `CLAUDE.md` / `.cursorrules`, etc.).
 
 ## 2. What can I do with it?
@@ -39,10 +41,20 @@ cp /path/to/your/ai-conversation.json sessions/
 # ① Diagnose environment (recommended first step)
 python3 python-scripts/universal_skill_generator.py --input ./sessions diagnose
 
-# ② Analyze session
+# ② Preprocess session (output structured text for LLM analysis)
+python3 python-scripts/universal_skill_generator.py --input ./sessions/session.json extract
+
+# ③ Analyze using built-in rule engine (fallback, no LLM required)
 python3 python-scripts/universal_skill_generator.py --input ./sessions/session.json analyze
 
-# ③ Generate skill document
+# ④ Generate skill document (with external LLM analysis result)
+python3 python-scripts/universal_skill_generator.py \
+  --input ./sessions/session.json \
+  --output-dir ./generated_skills \
+  generate --name my-first-skill \
+  --analysis '{"tasks":[...],"key_steps":[...],"constraints":[...],"keywords":[...],"confidence":0.85}'
+
+# ⑤ Generate skill document (using built-in rule engine, no --analysis)
 python3 python-scripts/universal_skill_generator.py \
   --input ./sessions/session.json \
   --output-dir ./generated_skills \
@@ -148,21 +160,31 @@ No standard export function. Copy conversation content from the web interface an
 
 ### How to Use Generated Skills with Non-OpenClaw Agents?
 
-1. **Paste at conversation start**: Paste `SKILL.md` content before your question when starting a new chat
-2. **Project-level config files**: Write key points into `CLAUDE.md` (Claude Code) or `.cursorrules` (Cursor) — these agents auto-load these files
-3. **System prompt**: Add `SKILL.md` content to your agent's custom system prompt
+1. **One-command setup (recommended)**: Run `setup-agent` to auto-generate the agent's config file, teaching it the full extract → LLM analysis → generate workflow
 
-> 💡 **In a nutshell**: OpenClaw uses "auto-injection", other agents use "manual feeding" — the end result is similar, just the delivery method differs.
+```bash
+experience-to-skill-generator setup-agent claude-code   # Generates CLAUDE.md
+experience-to-skill-generator setup-agent cursor         # Generates .cursorrules
+experience-to-skill-generator setup-agent windsurf       # Generates .windsurfrules
+```
+
+2. **Paste at conversation start**: Paste `SKILL.md` content before your question when starting a new chat
+3. **Project-level config files**: Write key points into `CLAUDE.md` (Claude Code) or `.cursorrules` (Cursor) — these agents auto-load these files
+4. **System prompt**: Add `SKILL.md` content to your agent's custom system prompt
+
+> 💡 **In a nutshell**: OpenClaw uses "auto-injection", other agents use `setup-agent` for "semi-auto injection" (one-time setup, permanent effect) — the end result is similar, just the delivery method differs.
 
 ## 6. CLI Reference
 
 | Command | Description | Example |
 | --- | --- | --- |
-| `diagnose` | Diagnose runtime environment | `experience-to-skill-generator --input ./sessions diagnose` |
-| `analyze` | Analyze session and output JSON | `experience-to-skill-generator --input ./sessions/session.json analyze --json-lines` |
+| `extract` | Preprocess session, output structured text for LLM analysis | `experience-to-skill-generator --input ./sessions/session.json extract` |
+| `analyze` | Analyze using built-in rule engine (fallback) | `experience-to-skill-generator --input ./sessions/session.json analyze --json-lines` |
 | `generate` | Generate SKILL.md | `experience-to-skill-generator --input ./sessions/session.json --output-dir ./generated_skills generate --name my-skill` |
+| `diagnose` | Diagnose runtime environment | `experience-to-skill-generator --input ./sessions diagnose` |
 | `config` | Print merged configuration | `experience-to-skill-generator config` |
 | `validate-config` | Validate configuration | `experience-to-skill-generator validate-config` |
+| `setup-agent` | Generate project-level workflow guide for a specific agent | `experience-to-skill-generator setup-agent claude-code` |
 
 | Flag | Description |
 | --- | --- |
@@ -171,6 +193,8 @@ No standard export function. Copy conversation content from the web interface an
 | `--conflict` | Conflict strategy: `rename` / `skip` / `overwrite` / `merge` / `fail` |
 | `--preserve-raw` | Preserve raw content (⚠️ may expose sensitive data) |
 | `--config` | JSON configuration file path |
+| `--analysis` | (generate subcommand) External LLM analysis result JSON |
+| `--analysis-stdin` | (generate subcommand) Read external analysis JSON from stdin |
 
 ### Environment Variables
 
@@ -277,7 +301,7 @@ python3 -c "import json; json.load(open('./sessions/session.json')); print('OK')
 
 ### ❓ Generated SKILL.md is low quality
 
-Session content is too short or lacks enough interaction turns. Make sure it includes multiple rounds of user/assistant dialogue with clear problem descriptions and solution steps.
+Recommend using the full `extract` + agent LLM analysis + `generate --analysis` workflow instead of relying solely on the built-in rule engine. If using the built-in rule engine, make sure the session includes multiple rounds of user/assistant dialogue with clear problem descriptions and solution steps.
 
 ### ❓ How to undo an installation
 

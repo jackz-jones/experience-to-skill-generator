@@ -14,9 +14,42 @@
 
 ### 2. 数据流
 
+工具采用“数据管道”架构，语义分析交给 agent 的 LLM 完成：
+
 ```mermaid
 flowchart TD
-    A[CLI / 安装脚本] --> B[构建运行时上下文]
+    subgraph "工具负责（确定性操作）"
+        A["CLI / 安装脚本"] --> B["构建运行时上下文"]
+        B --> C["加载并校验配置"]
+        C --> D["检测 agent 适配器"]
+        D --> E["加载会话文件"]
+        E --> F["归一化并脱敏消息"]
+        F --> G["分段并输出结构化文本 (extract)"]
+        I["接收分析结果 JSON"] --> J["渲染 SKILL 模板"]
+        J --> K["检测已有或相似技能"]
+        K --> L["应用冲突策略"]
+        L --> M["原子写入 SKILL.md"]
+    end
+
+    subgraph "Agent 的 LLM 负责（语义理解）"
+        G -->|“stdout”| H["Agent LLM 阅读会话文本"]
+        H --> H2["理解意图 / 提取任务 / 识别步骤"]
+        H2 --> H3["输出结构化分析 JSON"]
+        H3 -->|“--analysis 参数”| I
+        M -->|“stdout”| N["Agent LLM 自检生成质量"]
+        N --> O{"满意？"}
+        O -->|“否”| H
+        O -->|“是”| P["完成"]
+    end
+```
+
+### 2.1 降级数据流（不依赖 LLM）
+
+当工具独立使用或 agent 不支持多步调用时，可直接使用内置规则引擎：
+
+```mermaid
+flowchart TD
+    A[CLI] --> B[构建运行时上下文]
     B --> C[加载并校验配置]
     C --> D[检测 agent 适配器]
     D --> E[加载会话文件]
@@ -57,11 +90,37 @@ flowchart TD
 
 ### 4. 会话分析策略
 
-当前实现采用轻量规则分析，不依赖外部模型：
+#### 4.1 推荐模式：Agent LLM 驱动
 
-- 从用户消息中提取包含"请、需要、帮我、实现、修复、分析、生成"等标记的任务句。
+工具采用“数据管道”架构，语义分析交给 agent 自身的 LLM 完成：
+
+| 能力 | 负责方 | 原因 |
+| --- | --- | --- |
+| 会话文件读取、解析、归一化 | **工具** | I/O 操作，agent 不擅长 |
+| 语义分析（理解意图、提取任务） | **agent 的 LLM** | agent 本身就有这个能力 |
+| 结构化输出（生成 SKILL.md） | **工具** | 模板渲染、文件写入是确定性操作 |
+| 自检循环（ReAct） | **agent 自身** | agent 天然就是 ReAct 架构 |
+
+工作流：
+
+1. Agent 调用 `extract` 命令，获取预处理后的会话文本
+2. Agent 的 LLM 根据返回的 `prompt_hint` 分析会话内容
+3. Agent 将分析结果（JSON）传给 `generate --analysis` 命令
+4. Agent 检查生成的 SKILL.md 质量，不满意则调整后重新生成
+
+这种设计的优势：
+- **零配置**：无需在工具中配置 LLM API Key，复用 agent 的 LLM
+- **无额外依赖**：工具保持纯标准库实现
+- **单份 Token 消耗**：避免工具调 LLM + agent 调 LLM 的双重消耗
+- **自检循环天然支持**：agent 本身就是 ReAct 架构
+
+#### 4.2 降级模式：内置规则引擎
+
+当工具独立使用或 agent 不支持多步调用时，可直接使用内置规则引擎（`generate` 不传 `--analysis`）：
+
+- 从用户消息中提取包含“请、需要、帮我、实现、修复、分析、生成”等标记的任务句。
 - 从 assistant 消息中提取编号列表、项目符号和步骤性句子。
-- 从全文中提取"必须、禁止、注意、只能、避免"等约束句。
+- 从全文中提取“必须、禁止、注意、只能、避免”等约束句。
 - 使用中英文词形规则提取关键词。
 - 根据消息数量、任务、步骤、角色覆盖计算置信度。
 
@@ -174,10 +233,10 @@ exec "/usr/bin/python3" "/home/user/experience-to-skill-generator/python-scripts
 
 | 文件 | 职责 |
 | --- | --- |
-| `universal_skill_generator.py` | 主 CLI 入口；实现全部 5 个子命令（`analyze` / `generate` / `diagnose` / `config` / `validate-config`）、配置合并、adapter 检测、会话分析、模板渲染与原子写入 |
+| `universal_skill_generator.py` | 主 CLI 入口；实现全部 6 个子命令（`extract` / `analyze` / `generate` / `diagnose` / `config` / `validate-config`）、配置合并、adapter 检测、会话预处理、规则分析、外部分析接收、模板渲染与原子写入 |
 | `test_universal_skill_generator.py` | 主 CLI 单元测试 |
 | `e2e_validate_universal_skill_generator.py` | 覆盖 `generic` 与 `openclaw` 两种 adapter 流程的端到端验证 |
 
 ### 10. 已知局限性
 
-当前版本采用纯规则引擎实现会话分析，存在覆盖面窄、无语义理解、无自检机制等设计弊端。详见 [早期版本局限性分析](LIMITATIONS_CN.md)。
+内置规则引擎作为降级方案，存在覆盖面窄、无语义理解等设计弊端。推荐优先使用 `extract` + agent LLM 分析 + `generate --analysis` 的完整流程。详见 [早期版本局限性分析](LIMITATIONS_CN.md)。

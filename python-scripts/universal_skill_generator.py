@@ -908,6 +908,83 @@ def write_skill(context: RuntimeContext, skill_name: str, content: str) -> Dict[
     return result
 
 
+def command_extract(args: argparse.Namespace) -> int:
+    """预处理会话文件：读取、脱敏、归一化、分段，输出结构化文本供 agent 的 LLM 分析。"""
+    context = build_context(args)
+    messages = load_sessions(context)
+    max_chunks = getattr(args, "max_chunks", 0) or 0
+
+    # 按分段组织消息
+    by_chunk: Dict[int, List[Dict[str, str]]] = {}
+    for msg in messages:
+        by_chunk.setdefault(int(msg.get("chunk", 1)), []).append(msg)
+
+    chunks = []
+    for chunk_id, chunk_msgs in sorted(by_chunk.items()):
+        if max_chunks and chunk_id > max_chunks:
+            break
+        chunks.append({
+            "chunk_id": chunk_id,
+            "messages": [
+                {"role": m.get("role", "unknown"), "content": m.get("content", "")}
+                for m in chunk_msgs
+            ],
+        })
+
+    lang = _get_cli_lang()
+    if lang == "zh":
+        prompt_hint = (
+            "请分析以上会话，提取：1.任务列表 2.关键步骤 3.约束条件 4.关键词 5.置信度(0-1)。"
+            '输出 JSON 格式：{"tasks":[...],"key_steps":[...],"constraints":[...],"keywords":[...],"confidence":0.85}'
+        )
+    else:
+        prompt_hint = (
+            "Please analyze the conversation above and extract: 1.tasks 2.key steps 3.constraints 4.keywords 5.confidence(0-1). "
+            'Output JSON: {"tasks":[...],"key_steps":[...],"constraints":[...],"keywords":[...],"confidence":0.85}'
+        )
+
+    payload = {
+        "total_messages": len(messages),
+        "total_chars": sum(len(m.get("content", "")) for m in messages),
+        "total_chunks": len(chunks),
+        "source_files": sorted({m.get("source", "") for m in messages if m.get("source")}),
+        "chunks": chunks,
+        "prompt_hint": prompt_hint,
+    }
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    return 0
+
+
+def _parse_external_analysis(raw_json: str) -> Dict[str, Any]:
+    """解析并校验外部 LLM 提供的分析结果 JSON。"""
+    try:
+        data = json.loads(raw_json)
+    except json.JSONDecodeError as exc:
+        raise UserFacingError(_msg("analysis_schema_error").format(str(exc)))
+    if not isinstance(data, dict):
+        raise UserFacingError(_msg("analysis_schema_error").format("root must be an object"))
+    required_fields = ["tasks", "key_steps"]
+    for field in required_fields:
+        if field not in data:
+            raise UserFacingError(_msg("analysis_missing_field").format(field))
+    # 确保关键字段类型正确
+    for list_field in ["tasks", "key_steps", "constraints", "keywords"]:
+        if list_field in data and not isinstance(data[list_field], list):
+            data[list_field] = [str(data[list_field])]
+    if "confidence" in data:
+        try:
+            data["confidence"] = float(data["confidence"])
+        except (ValueError, TypeError):
+            data["confidence"] = 0.5
+    else:
+        data["confidence"] = 0.5
+    data.setdefault("constraints", [])
+    data.setdefault("keywords", [])
+    data.setdefault("requires_review", data["confidence"] < 0.55)
+    data.setdefault("summary", {"source_files": [], "analysis_mode": "external_llm"})
+    return data
+
+
 def command_analyze(args: argparse.Namespace) -> int:
     context = build_context(args)
     messages = load_sessions(context)
@@ -918,11 +995,38 @@ def command_analyze(args: argparse.Namespace) -> int:
 
 def command_generate(args: argparse.Namespace) -> int:
     context = build_context(args)
-    messages = load_sessions(context)
-    analysis = summarize_messages(messages, float(context.config.get("analysis", {}).get("confidence_threshold", 0.55)))
+
+    # 优先使用外部 LLM 分析结果
+    external_analysis_raw = getattr(args, "analysis", None)
+    if not external_analysis_raw and getattr(args, "analysis_stdin", False):
+        external_analysis_raw = sys.stdin.read().strip()
+
+    if external_analysis_raw:
+        analysis = _parse_external_analysis(external_analysis_raw)
+        # 仍需加载会话以获取来源信息（但不做规则分析）
+        try:
+            messages = load_sessions(context)
+            analysis.setdefault("summary", {})["source_files"] = sorted(
+                {m.get("source", "") for m in messages if m.get("source")}
+            )
+            analysis["summary"]["total_messages"] = len(messages)
+            analysis["summary"]["analysis_mode"] = "external_llm"
+        except UserFacingError:
+            pass  # 外部分析模式下，会话文件不是必须的
+    else:
+        messages = load_sessions(context)
+        analysis = summarize_messages(messages, float(context.config.get("analysis", {}).get("confidence_threshold", 0.55)))
+        analysis.setdefault("summary", {})["analysis_mode"] = "builtin_rules"
+
     skill_name, content = generate_skill_document(analysis, context, args.name or None)
     result = write_skill(context, skill_name, content)
-    payload = {"skill_name": skill_name, "write_result": result, "confidence": analysis.get("confidence"), "requires_review": analysis.get("requires_review")}
+    payload = {
+        "skill_name": skill_name,
+        "write_result": result,
+        "confidence": analysis.get("confidence"),
+        "requires_review": analysis.get("requires_review"),
+        "analysis_mode": analysis.get("summary", {}).get("analysis_mode", "unknown"),
+    }
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0
 
@@ -961,6 +1065,253 @@ def command_validate_config(args: argparse.Namespace) -> int:
         "agent": context.adapter_name,
         "adapter_strategy": context.adapter_strategy,
         "config_path": str(context.config_path) if context.config_path else None,
+    }
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# setup-agent：为非 OpenClaw agent 生成项目级工作流指引文件
+# ---------------------------------------------------------------------------
+
+SUPPORTED_SETUP_AGENTS = ["claude-code", "cursor", "windsurf"]
+
+
+def _build_workflow_guide(agent_type: str) -> Tuple[str, str]:
+    """根据 agent 类型生成 (文件名, 文件内容) 元组。"""
+    lang = _get_cli_lang()
+    tool_cmd = "experience-to-skill-generator"
+
+    if lang == "zh":
+        guide = _workflow_guide_zh(agent_type, tool_cmd)
+    else:
+        guide = _workflow_guide_en(agent_type, tool_cmd)
+
+    filename_map = {
+        "claude-code": "CLAUDE.md",
+        "cursor": ".cursorrules",
+        "windsurf": ".windsurfrules",
+    }
+    return filename_map[agent_type], guide
+
+
+def _workflow_guide_zh(agent_type: str, tool_cmd: str) -> str:
+    """生成中文版工作流指引。"""
+    agent_display = {
+        "claude-code": "Claude Code",
+        "cursor": "Cursor",
+        "windsurf": "Windsurf",
+    }[agent_type]
+
+    return f"""# Experience-to-Skill Generator 工作流指引
+
+> 本文件由 `{tool_cmd} setup-agent {agent_type}` 自动生成。
+> 它告诉 {agent_display} 如何调用本工具将会话转化为可复用的 SKILL 文档。
+
+## 工具说明
+
+本项目集成了 `{tool_cmd}` 命令行工具，用于将 AI 会话历史自动转化为结构化的 SKILL.md 技能文档。
+
+## 当用户要求"将当前会话整理为 skill"或类似请求时
+
+请严格按照以下步骤执行，**不要跳过任何步骤**：
+
+### 第 1 步：预处理会话
+
+执行以下命令，获取预处理后的结构化会话文本：
+
+```bash
+{tool_cmd} --input <会话文件路径> extract
+```
+
+该命令会输出 JSON 格式的预处理结果，包含分段后的会话内容和一个 `prompt_hint` 字段。
+
+### 第 2 步：用你自己的 LLM 能力分析会话
+
+根据第 1 步输出的 `prompt_hint` 提示，用你自身的语义理解能力分析会话内容，提取：
+
+1. **tasks** — 用户要完成的任务列表
+2. **key_steps** — 关键执行步骤
+3. **constraints** — 约束条件和注意事项
+4. **keywords** — 核心关键词
+5. **confidence** — 你对分析结果的置信度（0-1）
+
+将分析结果组织为 JSON 格式：
+
+```json
+{{
+  "tasks": ["任务1", "任务2"],
+  "key_steps": ["步骤1", "步骤2", "步骤3"],
+  "constraints": ["约束1", "约束2"],
+  "keywords": ["关键词1", "关键词2"],
+  "confidence": 0.85
+}}
+```
+
+### 第 3 步：生成 SKILL 文档
+
+将分析结果传给 generate 命令：
+
+```bash
+{tool_cmd} --input <会话文件路径> --output-dir ./generated_skills generate --name <技能名称> --analysis '<第2步的JSON>'
+```
+
+### 第 4 步：自检（ReAct 循环）
+
+1. 读取生成的 SKILL.md 文件内容
+2. 检查是否准确覆盖了会话中的所有要点
+3. 如果发现遗漏或不准确：
+   - 调整第 2 步的分析结果
+   - 重新执行第 3 步（使用 `--conflict overwrite`）
+4. 直到 SKILL.md 内容令人满意为止
+
+## 注意事项
+
+- **不要**直接调用 `generate` 而不传 `--analysis`，那样会使用内置规则引擎，质量远不如 LLM 分析
+- 如果会话文件路径不确定，先用 `{tool_cmd} --input <目录> diagnose` 诊断
+- 生成的 SKILL.md 中如果标记了"需要人工确认"，请提醒用户审核
+"""
+
+
+def _workflow_guide_en(agent_type: str, tool_cmd: str) -> str:
+    """生成英文版工作流指引。"""
+    agent_display = {
+        "claude-code": "Claude Code",
+        "cursor": "Cursor",
+        "windsurf": "Windsurf",
+    }[agent_type]
+
+    return f"""# Experience-to-Skill Generator Workflow Guide
+
+> This file was auto-generated by `{tool_cmd} setup-agent {agent_type}`.
+> It tells {agent_display} how to use this tool to convert conversations into reusable SKILL documents.
+
+## Tool Description
+
+This project includes the `{tool_cmd}` CLI tool for automatically converting AI conversation history into structured SKILL.md skill documents.
+
+## When the user asks to "convert this conversation into a skill" or similar
+
+Follow these steps strictly. **Do not skip any step**:
+
+### Step 1: Preprocess the conversation
+
+Run the following command to get preprocessed structured conversation text:
+
+```bash
+{tool_cmd} --input <session_file_path> extract
+```
+
+This outputs a JSON result containing chunked conversation content and a `prompt_hint` field.
+
+### Step 2: Analyze the conversation with your own LLM capabilities
+
+Based on the `prompt_hint` from Step 1, use your own semantic understanding to analyze the conversation and extract:
+
+1. **tasks** — List of tasks the user wanted to accomplish
+2. **key_steps** — Key execution steps
+3. **constraints** — Constraints and caveats
+4. **keywords** — Core keywords
+5. **confidence** — Your confidence in the analysis (0-1)
+
+Organize the analysis as JSON:
+
+```json
+{{
+  "tasks": ["task1", "task2"],
+  "key_steps": ["step1", "step2", "step3"],
+  "constraints": ["constraint1", "constraint2"],
+  "keywords": ["keyword1", "keyword2"],
+  "confidence": 0.85
+}}
+```
+
+### Step 3: Generate the SKILL document
+
+Pass the analysis result to the generate command:
+
+```bash
+{tool_cmd} --input <session_file_path> --output-dir ./generated_skills generate --name <skill-name> --analysis '<JSON from Step 2>'
+```
+
+### Step 4: Self-check (ReAct loop)
+
+1. Read the generated SKILL.md file
+2. Verify it accurately covers all key points from the conversation
+3. If anything is missing or inaccurate:
+   - Adjust the analysis from Step 2
+   - Re-run Step 3 (with `--conflict overwrite`)
+4. Repeat until the SKILL.md content is satisfactory
+
+## Important Notes
+
+- **Do not** call `generate` without `--analysis` — that falls back to the built-in rule engine, which produces significantly lower quality than LLM analysis
+- If unsure about the session file path, run `{tool_cmd} --input <directory> diagnose` first
+- If the generated SKILL.md is flagged as "requires review", remind the user to check it
+"""
+
+
+def command_setup_agent(args: argparse.Namespace) -> int:
+    """为指定 agent 生成项目级工作流指引文件。"""
+    agent_type = args.agent_type
+    output_dir = Path(args.output or ".").resolve()
+    force = getattr(args, "force", False)
+    dry_run = getattr(args, "dry_run", False)
+    lang = _get_cli_lang()
+
+    filename, content = _build_workflow_guide(agent_type)
+    target_path = output_dir / filename
+
+    if dry_run:
+        # 预览模式：输出 JSON 元信息 + 文件内容
+        payload = {
+            "agent_type": agent_type,
+            "filename": filename,
+            "target_path": str(target_path),
+            "dry_run": True,
+            "content": content,
+        }
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
+    # 检查目标文件是否已存在
+    if target_path.exists() and not force:
+        # 文件已存在且不强制覆盖：检查是否已包含本工具的指引
+        existing = target_path.read_text(encoding="utf-8")
+        marker = "Experience-to-Skill Generator"
+        if marker in existing:
+            print(_msg("setup_agent_exists").format(target_path), file=sys.stderr)
+            payload = {
+                "agent_type": agent_type,
+                "filename": filename,
+                "target_path": str(target_path),
+                "action": "skipped",
+                "reason": "already_contains_guide",
+            }
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return 0
+        # 文件存在但不包含本工具指引：追加到末尾
+        with target_path.open("a", encoding="utf-8") as f:
+            f.write("\n\n" + content)
+        safe_stderr(_msg("setup_agent_appended").format(target_path))
+        payload = {
+            "agent_type": agent_type,
+            "filename": filename,
+            "target_path": str(target_path),
+            "action": "appended",
+        }
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
+    # 创建或覆盖
+    output_dir.mkdir(parents=True, exist_ok=True)
+    target_path.write_text(content, encoding="utf-8")
+    safe_stderr(_msg("setup_agent_created").format(target_path))
+    payload = {
+        "agent_type": agent_type,
+        "filename": filename,
+        "target_path": str(target_path),
+        "action": "created" if not force else "overwritten",
     }
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0
@@ -1008,21 +1359,37 @@ _CLI_MESSAGES: Dict[str, Dict[str, str]] = {
         "zh": "可用命令",
         "en": "commands",
     },
+    "extract": {
+        "zh": "预处理会话：读取、脱敏、归一化，输出结构化文本供 LLM 分析（不做语义分析）",
+        "en": "Preprocess sessions: read, redact, normalize, output structured text for LLM analysis (no semantic analysis)",
+    },
+    "extract_max_chunks": {
+        "zh": "最大分段数量（0 表示不限制）",
+        "en": "Maximum number of chunks (0 for unlimited)",
+    },
     "analyze": {
-        "zh": "读取并分析会话",
-        "en": "Read and analyze conversations",
+        "zh": "使用内置规则引擎读取并分析会话（不依赖 LLM）",
+        "en": "Read and analyze conversations using built-in rule engine (no LLM required)",
     },
     "json_lines": {
         "zh": "紧凑 JSON 输出，便于脚本解析",
         "en": "Compact JSON output for scripting",
     },
     "generate": {
-        "zh": "分析会话并写入 SKILL",
-        "en": "Analyze conversations and write SKILLs",
+        "zh": "生成 SKILL 文件（可接收外部 LLM 分析结果，或使用内置规则引擎）",
+        "en": "Generate SKILL files (accepts external LLM analysis or uses built-in rule engine)",
     },
     "name": {
         "zh": "生成的 SKILL 名称",
         "en": "Name of the generated SKILL",
+    },
+    "analysis_json": {
+        "zh": "外部 LLM 分析结果 JSON（包含 tasks/key_steps/constraints/keywords/confidence 字段）",
+        "en": "External LLM analysis result JSON (with tasks/key_steps/constraints/keywords/confidence fields)",
+    },
+    "analysis_stdin": {
+        "zh": "从 stdin 读取外部 LLM 分析结果 JSON",
+        "en": "Read external LLM analysis result JSON from stdin",
     },
     "config_cmd": {
         "zh": "显示合并后的配置和适配策略",
@@ -1036,6 +1403,14 @@ _CLI_MESSAGES: Dict[str, Dict[str, str]] = {
         "zh": "诊断运行环境和会话来源",
         "en": "Diagnose runtime environment and conversation sources",
     },
+    "analysis_schema_error": {
+        "zh": "外部分析结果 JSON 格式无效：{}",
+        "en": "Invalid external analysis JSON: {}",
+    },
+    "analysis_missing_field": {
+        "zh": "外部分析结果缺少必要字段: {}",
+        "en": "External analysis result missing required field: {}",
+    },
     "options_title": {
         "zh": "选项",
         "en": "options",
@@ -1043,6 +1418,42 @@ _CLI_MESSAGES: Dict[str, Dict[str, str]] = {
     "help_option": {
         "zh": "显示帮助信息并退出",
         "en": "show this help message and exit",
+    },
+    "setup_agent": {
+        "zh": "为指定 agent 生成项目级工作流指引文件（如 CLAUDE.md、.cursorrules）",
+        "en": "Generate project-level workflow guide files for a specific agent (e.g. CLAUDE.md, .cursorrules)",
+    },
+    "setup_agent_type": {
+        "zh": "目标 agent 类型",
+        "en": "Target agent type",
+    },
+    "setup_agent_output": {
+        "zh": "输出目录（默认当前目录）",
+        "en": "Output directory (defaults to current directory)",
+    },
+    "setup_agent_force": {
+        "zh": "覆盖已存在的指引文件",
+        "en": "Overwrite existing guide files",
+    },
+    "setup_agent_dry_run": {
+        "zh": "仅预览生成内容，不写入文件",
+        "en": "Preview generated content without writing files",
+    },
+    "setup_agent_created": {
+        "zh": "已生成工作流指引文件: {}",
+        "en": "Workflow guide file created: {}",
+    },
+    "setup_agent_exists": {
+        "zh": "文件已存在（使用 --force 覆盖）: {}",
+        "en": "File already exists (use --force to overwrite): {}",
+    },
+    "setup_agent_appended": {
+        "zh": "已追加工作流指引到: {}",
+        "en": "Workflow guide appended to: {}",
+    },
+    "setup_agent_unknown": {
+        "zh": "不支持的 agent 类型: {}。支持: {}",
+        "en": "Unsupported agent type: {}. Supported: {}",
     },
 }
 
@@ -1075,12 +1486,18 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument("-h", "--help", action="help", default=argparse.SUPPRESS, help=_msg("help_option"))
         return sp
 
+    extract = _sub("extract", help=_msg("extract"))
+    extract.add_argument("--max-chunks", type=int, default=0, help=_msg("extract_max_chunks"))
+    extract.set_defaults(func=command_extract)
+
     analyze = _sub("analyze", help=_msg("analyze"))
     analyze.add_argument("--json-lines", action="store_true", help=_msg("json_lines"))
     analyze.set_defaults(func=command_analyze)
 
     generate = _sub("generate", help=_msg("generate"))
     generate.add_argument("--name", help=_msg("name"))
+    generate.add_argument("--analysis", help=_msg("analysis_json"))
+    generate.add_argument("--analysis-stdin", action="store_true", help=_msg("analysis_stdin"))
     generate.set_defaults(func=command_generate)
 
     config = _sub("config", help=_msg("config_cmd"))
@@ -1091,6 +1508,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     diagnose = _sub("diagnose", help=_msg("diagnose"))
     diagnose.set_defaults(func=command_diagnose)
+
+    setup = _sub("setup-agent", help=_msg("setup_agent"))
+    setup.add_argument("agent_type", choices=SUPPORTED_SETUP_AGENTS, help=_msg("setup_agent_type"))
+    setup.add_argument("--output", help=_msg("setup_agent_output"))
+    setup.add_argument("--force", action="store_true", help=_msg("setup_agent_force"))
+    setup.add_argument("--dry-run", action="store_true", help=_msg("setup_agent_dry_run"))
+    setup.set_defaults(func=command_setup_agent)
     return parser
 
 

@@ -17,6 +17,9 @@ CLI_SCRIPT = PROJECT_ROOT / "python-scripts" / "universal_skill_generator.py"
 REQUIRED_SECTIONS = ["## 适用场景", "## 触发条件", "## 执行步骤", "## 注意事项", "## 示例用法"]
 
 
+EXTRACT_REQUIRED_FIELDS = ["total_messages", "total_chars", "total_chunks", "chunks", "prompt_hint"]
+
+
 def run_command(args):
     result = subprocess.run(
         [sys.executable, str(CLI_SCRIPT), *args],
@@ -73,6 +76,16 @@ def validate_agent_flow(base_dir, agent):
     output_dir = base_dir / f"{agent}-generated-skills"
     skill_name = f"{agent}-universal-flow"
 
+    # 验证 extract 命令
+    extract_payload = json.loads(run_command(["--input", str(session_path), "extract"]))
+    for field in EXTRACT_REQUIRED_FIELDS:
+        if field not in extract_payload:
+            raise AssertionError(f"extract 输出缺少必要字段: {field}")
+    if not extract_payload["chunks"]:
+        raise AssertionError("extract 输出的 chunks 为空")
+    if not extract_payload["prompt_hint"]:
+        raise AssertionError("extract 输出缺少 prompt_hint")
+
     diagnose_payload = json.loads(run_command(["--input", str(session_path), "diagnose"]))
     if diagnose_payload["agent"] not in {"generic", "openclaw"}:
         raise AssertionError(f"诊断结果 agent 不在预期范围内: {diagnose_payload['agent']}")
@@ -85,25 +98,51 @@ def validate_agent_flow(base_dir, agent):
     if analysis_payload.get("confidence", 0) <= 0:
         raise AssertionError("分析结果置信度无效")
 
+    # 验证 generate --analysis（外部分析模式）
+    external_analysis = json.dumps({
+        "tasks": [f"实现 {agent} 环境通用技能生成"],
+        "key_steps": ["识别环境", "读取配置", "分析会话", "生成 SKILL"],
+        "constraints": ["避免覆盖已有文件"],
+        "keywords": ["agent", "skill", "generate"],
+        "confidence": 0.85,
+    })
+    external_output_dir = base_dir / f"{agent}-external-skills"
+    external_skill_name = f"{agent}-external-flow"
+    external_payload = json.loads(
+        run_command([
+            "--input", str(session_path),
+            "--output-dir", str(external_output_dir),
+            "--conflict", "rename",
+            "generate",
+            "--name", external_skill_name,
+            "--analysis", external_analysis,
+        ])
+    )
+    if external_payload.get("analysis_mode") != "external_llm":
+        raise AssertionError(f"外部分析模式未生效: {external_payload.get('analysis_mode')}")
+    external_skill_path = Path(external_payload.get("write_result", {}).get("path", ""))
+    validate_generated_skill(external_skill_path)
+
+    # 验证 generate（内置规则引擎模式）
     generate_payload = json.loads(
-        run_command(
-            [
-                "--input",
-                str(session_path),
-                "--output-dir",
-                str(output_dir),
-                "--conflict",
-                "rename",
-                "generate",
-                "--name",
-                skill_name,
-            ]
-        )
+        run_command([
+            "--input",
+            str(session_path),
+            "--output-dir",
+            str(output_dir),
+            "--conflict",
+            "rename",
+            "generate",
+            "--name",
+            skill_name,
+        ])
     )
     write_result = generate_payload.get("write_result", {})
     skill_path = Path(write_result.get("path", ""))
     if write_result.get("action") not in {"created", "renamed"}:
         raise AssertionError(f"不符合预期的写入动作: {write_result}")
+    if generate_payload.get("analysis_mode") != "builtin_rules":
+        raise AssertionError(f"内置规则模式未生效: {generate_payload.get('analysis_mode')}")
     validate_generated_skill(skill_path)
     return skill_path
 
